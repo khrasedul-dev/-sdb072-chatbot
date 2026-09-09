@@ -4,6 +4,11 @@
 #
 #   cd /srv/vip-bot/app && bash scripts/setup-mongo.sh
 #
+# It tries this host's own credentials first and asks only if they do not work.
+# To skip the prompt entirely:
+#
+#   MONGO_ADMIN_USER=root MONGO_ADMIN_PW='…' bash scripts/setup-mongo.sh
+#
 # Creates a `vipbot` database with a `vipbot_app` user scoped to it, writes
 # MONGODB_URI into .env, and restarts the bot. Nothing outside that database is
 # touched — no existing user, database or config is read or modified beyond
@@ -23,16 +28,28 @@ command -v mongosh >/dev/null || { echo "mongosh is not installed."; exit 1; }
 # mongod on this host runs with `authorization: enabled`, so even a brand new
 # database needs an admin login to create its user. Try the credentials this
 # host already keeps before asking anyone to type anything.
-ADMIN_USER=""
-ADMIN_PW=""
+#   MONGO_ADMIN_USER=root MONGO_ADMIN_PW='…' bash scripts/setup-mongo.sh
+# skips the prompts entirely.
+ADMIN_USER="${MONGO_ADMIN_USER:-}"
+ADMIN_PW="${MONGO_ADMIN_PW:-}"
 
 try_login() {
   mongosh --quiet -u "$1" -p "$2" --authenticationDatabase admin \
     --eval 'db.adminCommand({ping:1})' >/dev/null 2>&1
 }
 
+if [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PW" ]; then
+  if try_login "$ADMIN_USER" "$ADMIN_PW"; then
+    echo "  signed in as $ADMIN_USER"
+  else
+    echo "  MONGO_ADMIN_USER/MONGO_ADMIN_PW were refused by mongod."
+    exit 1
+  fi
+  ADMIN_FOUND=1
+fi
+
 CRED_FILE=/root/.trucking-mongo
-if [ -r "$CRED_FILE" ]; then
+if [ -z "${ADMIN_FOUND:-}" ] && [ -r "$CRED_FILE" ]; then
   # Tolerate KEY=value, KEY="value" and KEY='value'.
   FILE_PW=$(sed -n 's/^MONGO_ROOT_PW=["'"'"']\?\(.*[^"'"'"']\)["'"'"']\?$/\1/p' "$CRED_FILE" | head -1)
   if [ -n "$FILE_PW" ]; then
@@ -48,7 +65,10 @@ if [ -r "$CRED_FILE" ]; then
 fi
 
 if [ -z "$ADMIN_USER" ]; then
-  echo "Could not sign in with the credentials already on this host."
+  echo "Could not sign in automatically."
+  echo "  tried: root, admin, mongoadmin — with MONGO_ROOT_PW from $CRED_FILE"
+  echo "  (that password may have been rotated, or the admin user has another name)"
+  echo
   echo "Enter a MongoDB admin login (the one mongod was set up with):"
   read -rp "  username [root]: " ADMIN_USER
   ADMIN_USER=${ADMIN_USER:-root}
@@ -57,8 +77,9 @@ if [ -z "$ADMIN_USER" ]; then
 
   if ! try_login "$ADMIN_USER" "$ADMIN_PW"; then
     echo
-    echo "That login was refused. To see what admin users exist:"
-    echo "  mongosh -u <user> -p --authenticationDatabase admin --eval 'db.getSiblingDB(\"admin\").getUsers()'"
+    echo "That login was refused. Once you are in, this lists the admin users:"
+    echo "  mongosh -u <user> -p --authenticationDatabase admin \\"
+    echo "    --eval 'db.getSiblingDB(\"admin\").getUsers().users.map(u => u.user)'"
     exit 1
   fi
 fi
