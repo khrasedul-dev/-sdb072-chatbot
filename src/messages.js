@@ -25,9 +25,13 @@
 // change one, push, and the server has it a minute later. An environment
 // variable of the same name still wins if a host ever needs to override one.
 
-// Telegram username, no @. Every button opens a chat with this account, and
-// it is the only one allowed to run /post.
+// Telegram username, no @. Every button opens a chat with this account.
 const ADMIN_USERNAME = "potlood17";
+
+// Who may run the admin commands — /edit, /post, /login, /userbot.
+// Usernames without @, or numeric user ids for accounts that have no username.
+// Send /whoami to the bot and it tells you exactly what to put here.
+const ADMINS = ["potlood17"];
 
 // Where /post publishes the VIP message.
 //   public channel  -> "@yourchannel"
@@ -144,6 +148,7 @@ const GROUP_COMMANDS = [
 
 module.exports = {
   ADMIN_USERNAME,
+  ADMINS,
   CHANNEL_ID,
   AUTO_APPROVE_JOIN_REQUESTS,
   WELCOME_IN_GROUP,

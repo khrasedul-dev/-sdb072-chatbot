@@ -15,6 +15,7 @@ const {
 } = require("./userbot-auth");
 const {
   ADMIN_USERNAME,
+  ADMINS,
   CHANNEL_ID,
   AUTO_APPROVE_JOIN_REQUESTS,
   WELCOME_IN_GROUP,
@@ -301,16 +302,47 @@ function createBot(token) {
 
   /* --- admin --- */
 
-  // Only the account named in ADMIN_USERNAME can run the commands below.
-  const isAdmin = (ctx) =>
-    ADMIN_USERNAME &&
-    (ctx.from?.username || "").toLowerCase() === ADMIN_USERNAME.toLowerCase();
+  // Only the accounts in ADMINS can run the commands below. Matched on username
+  // or on numeric id, because an account is allowed to have no username.
+  const isAdmin = (ctx) => {
+    const username = (ctx.from?.username || "").toLowerCase();
+    const id = String(ctx.from?.id || "");
+    return ADMINS.some((entry) => entry === username || entry === id);
+  };
+
+  /**
+   * Refuse an admin command out loud when it was sent privately.
+   *
+   * Silence here is a trap: the command looks broken, and the only way to work
+   * out why is to read the source. In a group it stays quiet — members typing
+   * an admin command should not get an answer at all.
+   */
+  async function refuseAdmin(ctx) {
+    if (ctx.chat?.type !== "private") return;
+    const who = ctx.from?.username ? `@${ctx.from.username}` : `id ${ctx.from?.id}`;
+    await ctx.reply(
+      `That command is for the admin account, and you are ${who}.\n\n` +
+        `Allowed right now: ${ADMINS.map((a) => (/^\d+$/.test(a) ? `id ${a}` : "@" + a)).join(", ")}\n\n` +
+        "To add yourself, put your username in ADMINS in src/messages.js and push."
+    );
+  }
+
+  // Anyone can ask, so there is no guessing about what to add to ADMINS.
+  bot.command("whoami", async (ctx) => {
+    if (ctx.chat.type !== "private") return;
+    const username = ctx.from.username ? `@${ctx.from.username}` : "(none)";
+    await ctx.reply(
+      `Username: ${username}\nUser id: <code>${ctx.from.id}</code>\n\n` +
+        (isAdmin(ctx) ? "You are an admin." : "You are not an admin."),
+      { parse_mode: "HTML" }
+    );
+  });
 
   // Publishes the VIP post — text plus the button that DMs the admin — into the
   // channel. `/post` uses CHANNEL_ID; `/post @channel` or `/post -100…`
   // overrides it for one send.
   bot.command("post", async (ctx) => {
-    if (!isAdmin(ctx)) return;
+    if (!isAdmin(ctx)) return refuseAdmin(ctx);
 
     const target = ctx.message.text.split(/\s+/)[1] || CHANNEL_ID;
     if (!target) {
@@ -336,18 +368,23 @@ function createBot(token) {
   /* --- editing the messages from Telegram --- */
 
   bot.command("edit", async (ctx) => {
-    if (!isAdmin(ctx) || ctx.chat.type !== "private") return;
+    if (ctx.chat.type !== "private") return;
+    if (!isAdmin(ctx)) return refuseAdmin(ctx);
     await editor.showMenu(ctx);
   });
 
   bot.action(/^edit:(.+)$/, async (ctx) => {
-    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    if (!isAdmin(ctx)) {
+      // A pop-up, because a tap that does nothing looks like a broken button.
+      return ctx.answerCbQuery("That menu belongs to the admin account.", { show_alert: true });
+    }
     await ctx.answerCbQuery();
     await editor.beginEdit(ctx, ctx.match[1]);
   });
 
   bot.command("reset", async (ctx) => {
-    if (!isAdmin(ctx) || ctx.chat.type !== "private") return;
+    if (ctx.chat.type !== "private") return;
+    if (!isAdmin(ctx)) return refuseAdmin(ctx);
     if (!(await editor.resetCurrent(ctx))) {
       await ctx.reply("Nothing being edited. Send /edit first, then /reset to undo that one.");
     }
@@ -356,12 +393,13 @@ function createBot(token) {
   /* --- signing the userbot in, without needing a terminal --- */
 
   bot.command("userbot", async (ctx) => {
-    if (!isAdmin(ctx) || ctx.chat.type !== "private") return;
+    if (ctx.chat.type !== "private") return;
+    if (!isAdmin(ctx)) return refuseAdmin(ctx);
     await ctx.reply(sessionStatus());
   });
 
   bot.command("login", async (ctx) => {
-    if (!isAdmin(ctx)) return;
+    if (!isAdmin(ctx)) return refuseAdmin(ctx);
     if (ctx.chat.type !== "private") {
       // A login code posted in a group would be readable by everyone there.
       return ctx.reply("Send /login in a private chat with me, not in a group.");
@@ -375,7 +413,8 @@ function createBot(token) {
   });
 
   bot.command("cancel", async (ctx) => {
-    if (!isAdmin(ctx) || ctx.chat.type !== "private") return;
+    if (ctx.chat.type !== "private") return;
+    if (!isAdmin(ctx)) return refuseAdmin(ctx);
     if (cancelLogin(ctx.from.id)) return;
     if (editor.cancelEdit(ctx.from.id)) return ctx.reply("Left that message as it was.");
     await ctx.reply("Nothing to cancel.");

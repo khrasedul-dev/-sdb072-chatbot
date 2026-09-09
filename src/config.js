@@ -28,6 +28,15 @@ const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || settings.ADMIN_USERNAME ||
 
 const CHANNEL_ID = (process.env.CHANNEL_ID || settings.CHANNEL_ID || "").trim();
 
+// Comma-separated ADMIN_USERNAMES overrides the list in messages.js.
+const ADMINS = (
+  process.env.ADMIN_USERNAMES
+    ? process.env.ADMIN_USERNAMES.split(",")
+    : settings.ADMINS || [settings.ADMIN_USERNAME]
+)
+  .map((entry) => String(entry).trim().replace(/^@/, "").toLowerCase())
+  .filter(Boolean);
+
 const AUTO_APPROVE_JOIN_REQUESTS = bool(
   process.env.AUTO_APPROVE_JOIN_REQUESTS,
   settings.AUTO_APPROVE_JOIN_REQUESTS
@@ -122,6 +131,7 @@ module.exports = {
   BOT_TOKEN,
   MONGODB_URI,
   ADMIN_USERNAME,
+  ADMINS,
   CHANNEL_ID,
   PORT,
   HOST,

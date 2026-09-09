@@ -28,6 +28,7 @@ so a text edited once changes everywhere at once.
 | Bot added as **administrator** | Posts the VIP message there immediately, and DMs the chat id to whoever added it |
 | `/post` (admin only) | Publishes the VIP post into the channel again |
 | `/edit` (admin only) | Rewrite any message from Telegram, premium emoji and all |
+| `/whoami` | Your username and id — what to put in `ADMINS` |
 | `/login` (admin only) | Signs the userbot in from Telegram — no terminal |
 | `/userbot` (admin only) | Says whether the userbot has a working session |
 | Admin forwards a channel post to the bot | Bot replies with that channel's id |
@@ -479,7 +480,8 @@ does nothing.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `ADMIN_USERNAME` | `potlood17` | Who the buttons DM, and who may run `/post` |
+| `ADMIN_USERNAME` | `potlood17` | Who the buttons open a chat with |
+| `ADMINS` | `["potlood17"]` | Who may run the admin commands (usernames or ids) |
 | `CHANNEL_ID` | `""` | Target for `/post` |
 | `AUTO_APPROVE_JOIN_REQUESTS` | `true` | Approve join requests automatically |
 | `WELCOME_IN_GROUP` | `true` | Post the welcome in the group itself |
@@ -517,6 +519,11 @@ joining through a plain link will only see the pinned VIP post.
 **/link and /ib stopped expanding in DMs.** The userbot session was signed out
 — Telegram's Devices list, or a password change. Send `/login` to the bot to
 sign back in; `/userbot` confirms the state first.
+
+**An admin command does nothing.** You are not in `ADMINS`. Send `/whoami` to
+the bot — it replies with your username and id — then add that to `ADMINS` in
+[`src/messages.js`](src/messages.js) and push. In a private chat the bot now
+says this itself rather than staying silent.
 
 **Nothing happens at all after deploying.** Check the logs for
 `Bot @name is online in webhook mode`. Two copies of the bot running at once
