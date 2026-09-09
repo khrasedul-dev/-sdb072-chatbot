@@ -1,7 +1,7 @@
 {
   "name": "telegram-vip-bot",
   "version": "2.0.0",
-  "description": "Telegram bot: welcome message on channel/group join + join request, /start, /link, /ib. Webhook (auto-set) or long polling.",
+  "description": "Telegram bot (welcome + /start /link /ib) plus a GramJS userbot that expands /link and /ib in the admin's own DMs",
   "main": "index.js",
   "engines": {
     "node": ">=18"
@@ -9,12 +9,15 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js --polling",
-    "poll": "node index.js --polling"
+    "poll": "node index.js --polling",
+    "userbot": "node userbot.js",
+    "userbot:login": "node scripts/userbot-login.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "telegram": "^2.26.22"
   },
   "keywords": [
     "telegram-bot",

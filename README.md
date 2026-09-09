@@ -1,11 +1,17 @@
 # Telegram VIP Bot
 
-Welcomes everyone who joins the channel or group, answers `/start`, `/link` and
-`/ib`, and publishes the VIP post with a button that opens the admin's DM with a
-message already typed out.
+Two halves that share one set of messages:
 
-Built on [Telegraf](https://telegraf.js.org/). Runs on a webhook that configures
-itself, or on long polling — same command either way.
+- **The bot** ([Telegraf](https://telegraf.js.org/)) — welcomes everyone who
+  joins the channel or group, answers `/start`, `/link` and `/ib`, and publishes
+  the VIP post with a button that opens the admin's DM with a message already
+  typed out.
+- **The userbot** ([GramJS](https://gram.js.org/)) — runs as the admin's own
+  account so that typing `/link` or `/ib` while chatting to a prospect sends the
+  full text in its place. See [The userbot](#the-userbot).
+
+Both read [`src/messages.js`](src/messages.js), so a text edited once changes
+everywhere.
 
 ---
 
@@ -114,6 +120,78 @@ endpoint — point a free pinger such as [UptimeRobot](https://uptimerobot.com) 
 `https://your-app.onrender.com/` every 5 minutes and it stays up.
 
 Railway, Koyeb and Fly.io work the same way: set `BOT_TOKEN`, deploy, done.
+
+---
+
+## The userbot
+
+The bot cannot do this half. A bot only ever sees messages addressed to it, and
+it can never send **as a person** — so `/ib` typed into a one-to-one chat with a
+prospect is invisible to it. Reaching those messages means talking to Telegram
+over MTProto as the account itself, which is what GramJS does.
+
+The admin types a shortcut while chatting to someone; the full text is sent in
+its place, from their own account. The prospect sees an ordinary message.
+
+| Shortcut | Sends |
+| --- | --- |
+| `/link` | The PU Prime signup text |
+| `/ib` | The IB-change instructions |
+| `/vip` | The welcome/VIP text |
+
+Only in one-to-one chats — in a group the bot already answers `/link`, and both
+firing would send it twice. Flip `USERBOT_PRIVATE_ONLY=false` to change that.
+
+**Two differences from the bot's version of the same message:**
+
+- **No inline button.** Telegram only lets *bots* attach those. The PU Prime
+  link inside `/link` is an ordinary hyperlink, which is what a person sending
+  this by hand would have anyway.
+- **Premium emoji actually render.** `<tg-emoji>` needs either Telegram Premium
+  or a Fragment username. The account has Premium; the bot does not — so the
+  custom emoji show up here and get flattened to plain ones when the bot sends
+  the same text.
+
+### Signing in
+
+Telegram sends a login code, so this runs once, on a machine where you can type:
+
+```bash
+# 1. Register an app at https://my.telegram.org -> API development tools
+#    Put the api_id and api_hash in .env as TELEGRAM_API_ID / TELEGRAM_API_HASH
+# 2. Sign in
+npm run userbot:login
+```
+
+It asks for the phone number, the code Telegram sends, and the two-step password
+if the account has one. The session is written to `data/userbot.session` and
+also printed, so it can be moved to a server as `USERBOT_SESSION`.
+
+```bash
+npm run userbot        # run it
+```
+
+On the VPS it runs under PM2 as `vip-userbot`, and the deploy script starts it
+only once a session exists — until then it says so and leaves it stopped, rather
+than crash-looping against Telegram.
+
+### Before you run this
+
+**The session string is the account.** Anyone holding it is signed in, without a
+password or a code. It is gitignored and written `chmod 600`; keep it that way.
+To cut it off, open Telegram → Settings → Devices and terminate the session.
+
+**Automating a personal account carries a ban risk.** Telegram tolerates
+self-automation like this, but the account — not a disposable bot — is what gets
+limited if it looks like spam. Expanding snippets in conversations you are
+already having is the safe end of that; blasting the same text at strangers is
+not.
+
+**There may be no need for any of this.** Telegram Business, included with
+Premium, has *Quick Replies* built in: Settings → Business → Quick Replies, save
+a shortcut, and typing `/ib` in a private chat sends it. Officially supported,
+no code, no session, no ban risk. If the account has Premium it is worth trying
+that first — this userbot exists for the cases where it does not fit.
 
 ---
 
@@ -275,6 +353,10 @@ does nothing.
 | `WELCOME_IN_GROUP` | `true` | Post the welcome in the group itself |
 | `WELCOME_IN_DM` | `true` | Also send the welcome privately |
 | `WEBHOOK_SECRET` | derived | Header Telegram signs webhook calls with |
+| `TELEGRAM_API_ID` | — | Userbot only. From my.telegram.org |
+| `TELEGRAM_API_HASH` | — | Userbot only. From my.telegram.org |
+| `USERBOT_SESSION` | file | Overrides `data/userbot.session` |
+| `USERBOT_PRIVATE_ONLY` | `true` | Expand shortcuts in one-to-one chats only |
 
 ---
 
@@ -303,10 +385,14 @@ there. Forward a post from the channel to the bot to confirm the id.
 ## Files
 
 ```
-index.js            starts the bot — webhook or polling, plus the health endpoint
-src/bot.js          every command and join handler
-src/messages.js     all the texts and buttons  <- edit this one
-src/config.js       environment variables and public-URL detection
-deploy/             PM2 ecosystem, deploy.sh and the systemd auto-deploy units
-render.yaml         one-click Render deploy
+index.js                  starts the bot — webhook or polling, plus the health endpoint
+userbot.js                starts the /link and /ib expander
+src/bot.js                every command and join handler
+src/userbot.js            the shortcut expander
+src/messages.js           all the texts and buttons  <- edit this one
+src/format.js             placeholder and HTML helpers both halves share
+src/config.js             environment variables and public-URL detection
+scripts/userbot-login.js  one-time sign-in for the userbot
+deploy/                   PM2 ecosystem, deploy.sh and the systemd auto-deploy units
+render.yaml               one-click Render deploy
 ```

@@ -4,6 +4,7 @@ const { Telegraf, Markup } = require("telegraf");
 const { message } = require("telegraf/filters");
 
 const M = require("./messages");
+const { stripCustomEmoji, toPlainText, render } = require("./format");
 const {
   ADMIN_USERNAME,
   CHANNEL_ID,
@@ -26,42 +27,6 @@ const ALLOWED_UPDATES = [
 ];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/* ------------------------------- helpers ------------------------------- */
-
-const escapeHtml = (text) =>
-  String(text ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-/** Turn <tg-emoji id="…">🔥</tg-emoji> back into a plain 🔥. */
-const stripCustomEmoji = (html) =>
-  String(html ?? "").replace(/<tg-emoji[^>]*>([\s\S]*?)<\/tg-emoji>/g, "$1");
-
-/** Everything a Telegram HTML message holds, as plain readable text. */
-const toPlainText = (html) =>
-  stripCustomEmoji(html)
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .trim();
-
-/** Fill {name} / {username} / {chat} / {admin} in a message template. */
-function render(template, { user, chat } = {}) {
-  const firstName = escapeHtml(user?.first_name || "there");
-  const mention = user?.id
-    ? `<a href="tg://user?id=${user.id}">${firstName}</a>`
-    : firstName;
-
-  return String(template ?? "")
-    .replace(/\{name\}/g, mention)
-    .replace(/\{username\}/g, user?.username ? `@${user.username}` : firstName)
-    .replace(/\{chat\}/g, escapeHtml(chat?.title || "our community"))
-    .replace(/\{admin\}/g, ADMIN_USERNAME);
-}
 
 /**
  * Send an HTML message, working around the two ways Telegram refuses one

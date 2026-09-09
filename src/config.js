@@ -80,6 +80,21 @@ const WEBHOOK_PATH =
     ? crypto.createHash("sha256").update(`path:${BOT_TOKEN}`).digest("hex").slice(0, 32)
     : "webhook");
 
+// ---------------------------------------------------------------
+//  Userbot: the /link and /ib expander that runs as the admin's own
+//  account. Needs an app registered at https://my.telegram.org, which is
+//  separate from the BotFather token above.
+// ---------------------------------------------------------------
+const TELEGRAM_API_ID = Number(process.env.TELEGRAM_API_ID) || 0;
+const TELEGRAM_API_HASH = (process.env.TELEGRAM_API_HASH || '').trim();
+
+// Overrides data/userbot.session — for hosts without a persistent disk.
+const USERBOT_SESSION = (process.env.USERBOT_SESSION || '').trim();
+
+// Only expand shortcuts in one-to-one chats. In a group the bot answers /link
+// already, and both firing would send the message twice.
+const USERBOT_PRIVATE_ONLY = bool(process.env.USERBOT_PRIVATE_ONLY, true);
+
 const MODE = FORCE_POLLING || !PUBLIC_URL ? "polling" : "webhook";
 
 module.exports = {
@@ -96,4 +111,8 @@ module.exports = {
   WEBHOOK_PATH,
   MODE,
   FORCE_POLLING,
+  TELEGRAM_API_ID,
+  TELEGRAM_API_HASH,
+  USERBOT_SESSION,
+  USERBOT_PRIVATE_ONLY,
 };
