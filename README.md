@@ -14,12 +14,13 @@ itself, or on long polling — same command either way.
 | Trigger | What happens |
 | --- | --- |
 | `/start` in a private chat | Sends the welcome message + **JOIN FREE VIP** button |
-| `/link` | Sends the PU Prime signup text + link button + DM button |
-| `/ib` | Sends the IB-change instructions + contact button |
+| `/link` | Sends the PU Prime signup text + link button + DM button — works in groups too |
+| `/ib` | Sends the IB-change instructions + contact button — works in groups too |
 | Someone joins a **group** | Welcome posted in the group, and sent as a DM when possible |
 | Someone joins a **channel** | Welcome sent as a DM (channels get no per-join post) |
 | Someone **requests to join** | Request approved, then the welcome arrives as a DM |
-| `/post` (admin only) | Publishes the VIP post into the channel |
+| Bot added as **administrator** | Posts the VIP message there immediately, and DMs the chat id to whoever added it |
+| `/post` (admin only) | Publishes the VIP post into the channel again |
 | Admin forwards a channel post to the bot | Bot replies with that channel's id |
 
 The **JOIN FREE VIP** button opens `t.me/<admin>` with the join request
@@ -46,10 +47,18 @@ for the DM button and `/post` to point at the right places.
 
 ### 3. Add the bot to the channel / group
 
-Add it as an **administrator**. It needs:
+Add it as an **administrator**. That is the whole setup — the bot posts the VIP
+message there straight away and welcomes everyone who joins from then on, in
+any chat, with nothing to configure per chat.
+
+It needs:
 
 - **Post Messages** — to send the welcome and to run `/post`
 - **Add Members / Invite Users** — to approve join requests
+
+Administrator rights are also what makes Telegram deliver `chat_member` join
+updates at all. In a channel that is the only signal a join happened, so
+without them channel joins are invisible to the bot.
 
 ### 4. Run it
 
@@ -105,6 +114,40 @@ endpoint — point a free pinger such as [UptimeRobot](https://uptimerobot.com) 
 `https://your-app.onrender.com/` every 5 minutes and it stays up.
 
 Railway, Koyeb and Fly.io work the same way: set `BOT_TOKEN`, deploy, done.
+
+---
+
+## Never missed, never doubled
+
+One person joining reaches the bot as up to three separate updates — the
+service message, the `chat_member` update, and a join request. Exactly one of
+them should produce a welcome, and none of them should be lost.
+
+**Not missed:**
+
+- All three signals are handled, so a join is caught however it arrives.
+- The polling loop keeps its backlog across a restart (`dropPendingUpdates:
+  false`). A deploy reloads PM2 for about two seconds; anyone who joins in that
+  window is still welcomed afterwards.
+- A `429` rate limit — likely when a burst of people join at once — is waited
+  out and retried. Telegram states how long to wait and that it did not send,
+  so retrying cannot duplicate anything. Same for `5xx`.
+- If every send for one member fails, the bot forgets it tried, so the next
+  signal for that person retries instead of writing them off.
+
+**Not doubled:**
+
+- Whichever signal arrives first claims the member; the others see the claim
+  and stay quiet.
+- That list lives in `data/welcomed.json`, not just in memory, so it survives
+  the restart on every deploy. Without it, a re-delivered update would greet
+  someone a second time. Entries are kept for 7 days and pruned.
+- The file is written by rename, so a crash mid-write cannot leave a truncated
+  file that reads as empty and re-welcomes everyone.
+- A network error is deliberately *not* retried: the message may have arrived
+  before the connection dropped, and a blind retry would post it twice.
+
+`data/` is gitignored, so a deploy never overwrites it.
 
 ---
 

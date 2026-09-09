@@ -92,9 +92,17 @@ Want to move your PU Prime account under our IB? Follow these steps 👇
 
 const IB_BUTTON_TEXT = "📩 Need Help? Contact Admin";
 
-// Short descriptions shown in Telegram's command menu (the "/" list).
-const COMMAND_DESCRIPTIONS = [
+// What Telegram shows in the "/" menu. Two lists, because the menu is scoped:
+// /start only makes sense one-to-one, while /link and /ib are the two commands
+// members should be able to pull up inside the group. In a group Telegram
+// renders them as /link@yourbot so it is clear which bot answers.
+const PRIVATE_COMMANDS = [
   { command: "start", description: "Join our FREE VIP 💎" },
+  { command: "link", description: "Open a PU Prime account 🔗" },
+  { command: "ib", description: "Change your IB to 33772566 🔄" },
+];
+
+const GROUP_COMMANDS = [
   { command: "link", description: "Open a PU Prime account 🔗" },
   { command: "ib", description: "Change your IB to 33772566 🔄" },
 ];
@@ -108,5 +116,6 @@ module.exports = {
   LINK_BUTTON_URL,
   IB_MESSAGE,
   IB_BUTTON_TEXT,
-  COMMAND_DESCRIPTIONS,
+  PRIVATE_COMMANDS,
+  GROUP_COMMANDS,
 };

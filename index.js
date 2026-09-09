@@ -1,7 +1,7 @@
 const express = require("express");
 
 const { createBot, ALLOWED_UPDATES } = require("./src/bot");
-const { COMMAND_DESCRIPTIONS } = require("./src/messages");
+const { PRIVATE_COMMANDS, GROUP_COMMANDS } = require("./src/messages");
 const {
   BOT_TOKEN,
   PORT,
@@ -78,14 +78,29 @@ async function main() {
     // A webhook left over from a previous deploy would silently swallow every
     // update, so clear it before polling.
     await bot.telegram.deleteWebhook().catch(() => {});
-    bot.launch({ allowedUpdates: ALLOWED_UPDATES, dropPendingUpdates: true }).catch((err) => {
-      console.error("[boot] Polling stopped:", err);
-      process.exit(1);
-    });
+    bot
+      .launch({
+        allowedUpdates: ALLOWED_UPDATES,
+        // Keep whatever queued up while the process was restarting. Every
+        // deploy reloads PM2, and dropping the backlog would mean anyone who
+        // joined in those two seconds never gets welcomed. Re-delivered
+        // updates are safe: the welcomed list on disk survives the restart.
+        dropPendingUpdates: false,
+      })
+      .catch((err) => {
+        console.error("[boot] Polling stopped:", err);
+        process.exit(1);
+      });
   }
 
-  // Nice-to-have, and harmless if Telegram rate-limits it.
-  bot.telegram.setMyCommands(COMMAND_DESCRIPTIONS).catch(() => {});
+  // The "/" menu is scoped: /start belongs in a private chat, while /link and
+  // /ib should be listed inside groups too. Nice-to-have — harmless if
+  // Telegram rate-limits it.
+  bot.telegram
+    .setMyCommands(PRIVATE_COMMANDS, { scope: { type: "all_private_chats" } })
+    .then(() => bot.telegram.setMyCommands(GROUP_COMMANDS, { scope: { type: "all_group_chats" } }))
+    .then(() => console.log(`Commands: ${GROUP_COMMANDS.map((c) => "/" + c.command).join(" ")} in groups`))
+    .catch((err) => console.warn("[boot] Could not publish the command menu:", err.message));
 
   const shutdown = (signal) => {
     console.log(`\n${signal} received — shutting down.`);
