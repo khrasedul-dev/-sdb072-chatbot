@@ -110,8 +110,8 @@ Railway, Koyeb and Fly.io work the same way: set `BOT_TOKEN`, deploy, done.
 
 ## VPS deployment (this bot's live setup)
 
-Running on the RackNerd box at `23.95.192.225`, under PM2, in **long polling** —
-no webhook, nothing inbound, nothing for nginx to route.
+Running on the production VPS under PM2, in **long polling** — no webhook,
+nothing inbound, nothing for nginx to route.
 
 ```
 /srv/vip-bot/app          the git checkout (this repo, origin/main)
