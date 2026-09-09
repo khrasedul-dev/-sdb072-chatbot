@@ -43,26 +43,13 @@ echo "### install"
 # --omit=dev: there is no build step and no test runner in production.
 npm ci --omit=dev --no-audit --no-fund --loglevel=error
 
-echo "### restart bot"
+echo "### restart"
 if pm2 describe vip-bot >/dev/null 2>&1; then
-  pm2 reload deploy/ecosystem.config.cjs --only vip-bot --update-env
+  pm2 reload deploy/ecosystem.config.cjs --update-env
 else
-  pm2 start deploy/ecosystem.config.cjs --only vip-bot
+  pm2 start deploy/ecosystem.config.cjs
 fi
 
-# The userbot needs USERBOT_SESSION in .env, and putting it there needs someone
-# to type the code Telegram sends. Until that has happened, starting it would
-# only crash-loop against Telegram — so leave it alone and say why.
-if grep -qE '^USERBOT_SESSION=.+' .env 2>/dev/null; then
-  echo "### restart userbot"
-  if pm2 describe vip-userbot >/dev/null 2>&1; then
-    pm2 reload deploy/ecosystem.config.cjs --only vip-userbot --update-env
-  else
-    pm2 start deploy/ecosystem.config.cjs --only vip-userbot
-  fi
-else
-  echo "### userbot: no USERBOT_SESSION in .env — skipping (run 'npm run userbot:login')"
-fi
 # --force so saving this app's state never prompts about the others already
 # under PM2 on this host.
 pm2 save --force >/dev/null

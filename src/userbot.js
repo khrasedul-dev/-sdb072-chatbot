@@ -13,14 +13,20 @@ const { TelegramClient } = require("telegram");
 const { StringSession } = require("telegram/sessions");
 const { NewMessage } = require("telegram/events");
 
-const M = require("./messages");
+const store = require("./store");
 const { render } = require("./format");
-const {
-  TELEGRAM_API_ID,
-  TELEGRAM_API_HASH,
-  USERBOT_SESSION,
-  USERBOT_PRIVATE_ONLY,
-} = require("./config");
+const { TELEGRAM_API_ID, TELEGRAM_API_HASH, USERBOT_PRIVATE_ONLY } = require("./config");
+const { readEnv } = require("./env-file");
+
+/**
+ * Read the session from .env every time rather than caching it at require time
+ * — /login rewrites that file, and the userbot has to be able to pick the new
+ * one up without restarting the process.
+ */
+function readSession() {
+  const match = readEnv().match(/^USERBOT_SESSION=(.+)$/m);
+  return match ? match[1].trim() : "";
+}
 
 /**
  * What each shortcut expands to. Same messages the bot sends, so editing
@@ -31,12 +37,12 @@ const {
  * is what a person sending this by hand would have anyway.
  */
 const SNIPPETS = {
-  "/link": M.LINK_MESSAGE,
-  "/ib": M.IB_MESSAGE,
-  "/vip": M.WELCOME_MESSAGE,
+  "/link": "LINK_MESSAGE",
+  "/ib": "IB_MESSAGE",
+  "/vip": "WELCOME_MESSAGE",
 };
 
-function createClient(session = USERBOT_SESSION) {
+function createClient(session = readSession()) {
   if (!TELEGRAM_API_ID || !TELEGRAM_API_HASH) {
     throw new Error(
       "TELEGRAM_API_ID and TELEGRAM_API_HASH are missing. Get them from https://my.telegram.org -> API development tools."
@@ -65,7 +71,12 @@ function createClient(session = USERBOT_SESSION) {
 async function expand(client, event) {
   const msg = event.message;
   const typed = (msg.text || "").trim().toLowerCase();
-  const template = SNIPPETS[typed];
+  const key = SNIPPETS[typed];
+  if (!key) return false;
+
+  // Read at send time, not at startup: an edit made through the bot has to
+  // show up here without restarting this process.
+  const template = store.get(key);
   if (!template) return false;
 
   if (USERBOT_PRIVATE_ONLY && !event.isPrivate) return false;
@@ -99,40 +110,93 @@ async function expand(client, event) {
   return true;
 }
 
-async function startUserbot() {
-  if (!USERBOT_SESSION) {
-    throw new Error(
-      "USERBOT_SESSION is not in .env. Run `npm run userbot:login` once, somewhere you can type the code Telegram sends."
-    );
+/* --------------------------- running alongside -------------------------- */
+// The userbot lives in the same process as the bot, so there is one thing to
+// deploy, one log to read, and one in-memory copy of the messages — an edit
+// made through the bot is in effect here immediately.
+//
+// It must never be able to take the bot down with it, though: an expired
+// session or an unreachable Telegram is reported and left, and the bot carries
+// on answering.
+
+let client = null;
+let account = null;
+
+const isRunning = () => Boolean(client);
+const runningAs = () => account;
+
+/**
+ * Bring the userbot up. Resolves to null — never throws — when there is no
+ * usable session; the reason goes to the log, and /login fixes it.
+ */
+async function startUserbot({ session = readSession() } = {}) {
+  if (client) return client;
+
+  if (!session) {
+    console.warn("[userbot] Not signed in — /link and /ib will not expand in DMs. Send /login to the bot.");
+    return null;
   }
 
-  const client = createClient(USERBOT_SESSION);
-  await client.connect();
+  let candidate = null;
+  try {
+    candidate = createClient(session);
+    await candidate.connect();
 
-  if (!(await client.checkAuthorization())) {
-    throw new Error(
-      "USERBOT_SESSION is no longer valid — the account was probably signed out from Telegram's Devices list. Run `npm run userbot:login` again."
+    if (!(await candidate.checkAuthorization())) {
+      console.warn(
+        "[userbot] The saved session is no longer valid — the account was probably signed out " +
+          "from Telegram's Devices list. Send /login to the bot to sign in again."
+      );
+      await candidate.destroy().catch(() => {});
+      return null;
+    }
+
+    const me = await candidate.getMe();
+    account = me.username ? `@${me.username}` : me.firstName;
+
+    candidate.addEventHandler(
+      (event) =>
+        expand(candidate, event).catch((err) =>
+          console.error("[userbot] Could not expand the shortcut:", err.message)
+        ),
+      new NewMessage({ outgoing: true, incoming: false })
     );
+
+    client = candidate;
+    console.log(
+      `Userbot:  ${account} (${me.id}) — ${Object.keys(SNIPPETS).join(" ")} in ` +
+        `${USERBOT_PRIVATE_ONLY ? "private chats" : "every chat"}`
+    );
+    return client;
+  } catch (err) {
+    console.error("[userbot] Could not start:", err.message);
+    await candidate?.destroy().catch(() => {});
+    return null;
   }
-
-  const me = await client.getMe();
-  const label = me.username ? `@${me.username}` : me.firstName;
-
-  client.addEventHandler(
-    (event) =>
-      expand(client, event).catch((err) =>
-        console.error("[userbot] Could not expand the shortcut:", err.message)
-      ),
-    new NewMessage({ outgoing: true, incoming: false })
-  );
-
-  console.log("====================================================");
-  console.log(`Userbot running as ${label} (${me.id}).`);
-  console.log(`Shortcuts: ${Object.keys(SNIPPETS).join("  ")}`);
-  console.log(`Scope: ${USERBOT_PRIVATE_ONLY ? "private chats only" : "every chat"}`);
-  console.log("====================================================");
-
-  return client;
 }
 
-module.exports = { createClient, startUserbot, expand, SNIPPETS };
+async function stopUserbot() {
+  if (!client) return;
+  const stopping = client;
+  client = null;
+  account = null;
+  await stopping.destroy().catch(() => {});
+}
+
+/** Used after /login writes a new session. */
+async function restartUserbot(session) {
+  await stopUserbot();
+  return startUserbot({ session });
+}
+
+module.exports = {
+  createClient,
+  startUserbot,
+  stopUserbot,
+  restartUserbot,
+  isRunning,
+  runningAs,
+  readSession,
+  expand,
+  SNIPPETS,
+};

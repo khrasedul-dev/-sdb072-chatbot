@@ -3,7 +3,8 @@ const path = require("path");
 const { Telegraf, Markup } = require("telegraf");
 const { message } = require("telegraf/filters");
 
-const M = require("./messages");
+const store = require("./store");
+const editor = require("./editor");
 const { stripCustomEmoji, toPlainText, render } = require("./format");
 const {
   startLogin,
@@ -98,22 +99,22 @@ async function sendHtml(telegram, chatId, html, extra = {}) {
 
 /** Button that opens the admin's DM with the join request already typed out. */
 function welcomeKeyboard() {
-  const prefilled = encodeURIComponent(toPlainText(M.WELCOME_PREFILLED_DM));
+  const prefilled = encodeURIComponent(toPlainText(store.get("WELCOME_PREFILLED_DM")));
   return Markup.inlineKeyboard([
-    [Markup.button.url(M.WELCOME_BUTTON_TEXT, `https://t.me/${ADMIN_USERNAME}?text=${prefilled}`)],
+    [Markup.button.url(store.get("WELCOME_BUTTON_TEXT"), `https://t.me/${ADMIN_USERNAME}?text=${prefilled}`)],
   ]);
 }
 
 function linkKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.url(M.LINK_BUTTON_TEXT, M.LINK_BUTTON_URL)],
+    [Markup.button.url(store.get("LINK_BUTTON_TEXT"), store.get("LINK_BUTTON_URL"))],
     [Markup.button.url(`📩 DM @${ADMIN_USERNAME}`, `https://t.me/${ADMIN_USERNAME}`)],
   ]);
 }
 
 function ibKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.url(M.IB_BUTTON_TEXT, `https://t.me/${ADMIN_USERNAME}`)],
+    [Markup.button.url(store.get("IB_BUTTON_TEXT"), `https://t.me/${ADMIN_USERNAME}`)],
   ]);
 }
 
@@ -207,7 +208,7 @@ loadStore();
  * Returns whether anything actually reached them.
  */
 async function welcomeMember(telegram, { chat, user, dmOnly = false }) {
-  const text = render(M.WELCOME_MESSAGE, { user, chat });
+  const text = render(store.get("WELCOME_MESSAGE"), { user, chat });
   const extra = welcomeKeyboard();
   const where = chat?.title || chat?.id;
   let delivered = false;
@@ -275,7 +276,7 @@ function createBot(token) {
     await sendHtml(
       ctx.telegram,
       ctx.chat.id,
-      render(M.WELCOME_MESSAGE, { user: ctx.from, chat: ctx.chat }),
+      render(store.get("WELCOME_MESSAGE"), { user: ctx.from, chat: ctx.chat }),
       welcomeKeyboard()
     );
   });
@@ -284,7 +285,7 @@ function createBot(token) {
     await sendHtml(
       ctx.telegram,
       ctx.chat.id,
-      render(M.LINK_MESSAGE, { user: ctx.from, chat: ctx.chat }),
+      render(store.get("LINK_MESSAGE"), { user: ctx.from, chat: ctx.chat }),
       linkKeyboard()
     );
   });
@@ -293,7 +294,7 @@ function createBot(token) {
     await sendHtml(
       ctx.telegram,
       ctx.chat.id,
-      render(M.IB_MESSAGE, { user: ctx.from, chat: ctx.chat }),
+      render(store.get("IB_MESSAGE"), { user: ctx.from, chat: ctx.chat }),
       ibKeyboard()
     );
   });
@@ -321,7 +322,7 @@ function createBot(token) {
     }
 
     try {
-      await sendHtml(ctx.telegram, target, M.WELCOME_MESSAGE, welcomeKeyboard());
+      await sendHtml(ctx.telegram, target, store.get("WELCOME_MESSAGE"), welcomeKeyboard());
       await ctx.reply(`Posted to ${target}.`);
     } catch (err) {
       await ctx.reply(
@@ -329,6 +330,26 @@ function createBot(token) {
           "Check that the id is right and that I am an administrator there with " +
           '"Post Messages" permission.'
       );
+    }
+  });
+
+  /* --- editing the messages from Telegram --- */
+
+  bot.command("edit", async (ctx) => {
+    if (!isAdmin(ctx) || ctx.chat.type !== "private") return;
+    await editor.showMenu(ctx);
+  });
+
+  bot.action(/^edit:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx)) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    await editor.beginEdit(ctx, ctx.match[1]);
+  });
+
+  bot.command("reset", async (ctx) => {
+    if (!isAdmin(ctx) || ctx.chat.type !== "private") return;
+    if (!(await editor.resetCurrent(ctx))) {
+      await ctx.reply("Nothing being edited. Send /edit first, then /reset to undo that one.");
     }
   });
 
@@ -355,18 +376,30 @@ function createBot(token) {
 
   bot.command("cancel", async (ctx) => {
     if (!isAdmin(ctx) || ctx.chat.type !== "private") return;
-    if (!cancelLogin(ctx.from.id)) await ctx.reply("Nothing to cancel.");
+    if (cancelLogin(ctx.from.id)) return;
+    if (editor.cancelEdit(ctx.from.id)) return ctx.reply("Left that message as it was.");
+    await ctx.reply("Nothing to cancel.");
   });
 
-  // While a login is running, the admin's plain messages are its answers.
-  // Registered before the other message handlers so a phone number or a code
-  // never falls through to them.
+  // The admin's plain messages belong to whichever conversation is open — a
+  // login in progress, or a message being rewritten. Registered before the
+  // other handlers so a login code or a new VIP post never falls through.
   bot.on(message("text"), async (ctx, next) => {
     if (ctx.chat.type !== "private" || !isAdmin(ctx)) return next();
-    if (ctx.message.text.startsWith("/")) return next();
-    if (!isLoggingIn(ctx.from.id)) return next();
 
-    provideAnswer(ctx.from.id, ctx.message.text.trim(), ctx.message.message_id);
+    if (isLoggingIn(ctx.from.id)) {
+      // Commands are answers here too: a code or a password could start with a
+      // slash, and /cancel has its own handler registered earlier.
+      if (ctx.message.text.trim() === "/cancel") return next();
+      return provideAnswer(ctx.from.id, ctx.message.text.trim(), ctx.message.message_id);
+    }
+
+    if (editor.isEditing(ctx.from.id)) {
+      if (["/cancel", "/reset"].includes(ctx.message.text.trim())) return next();
+      if (await editor.applyEdit(ctx)) return;
+    }
+
+    return next();
   });
 
   // Forwarding any channel post to the bot is the easiest way to learn a private
@@ -452,7 +485,7 @@ function createBot(token) {
     if (!claimWelcome(chat.id, "bot-joined")) return;
 
     try {
-      await sendHtml(ctx.telegram, chat.id, M.WELCOME_MESSAGE, welcomeKeyboard());
+      await sendHtml(ctx.telegram, chat.id, store.get("WELCOME_MESSAGE"), welcomeKeyboard());
       console.log(`[bot] Published the VIP post to "${chat.title || chat.id}".`);
     } catch (err) {
       releaseWelcome(chat.id, "bot-joined");

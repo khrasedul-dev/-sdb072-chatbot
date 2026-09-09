@@ -1,6 +1,6 @@
 # Telegram VIP Bot
 
-Two halves that share one set of messages:
+One process, two halves, one set of messages:
 
 - **The bot** ([Telegraf](https://telegraf.js.org/)) — welcomes everyone who
   joins the channel or group, answers `/start`, `/link` and `/ib`, and publishes
@@ -10,8 +10,8 @@ Two halves that share one set of messages:
   account so that typing `/link` or `/ib` while chatting to a prospect sends the
   full text in its place. See [The userbot](#the-userbot).
 
-Both read [`src/messages.js`](src/messages.js), so a text edited once changes
-everywhere.
+Both run in the same Node process and read the same messages out of MongoDB,
+so a text edited once changes everywhere at once.
 
 ---
 
@@ -27,6 +27,7 @@ everywhere.
 | Someone **requests to join** | Request approved, then the welcome arrives as a DM |
 | Bot added as **administrator** | Posts the VIP message there immediately, and DMs the chat id to whoever added it |
 | `/post` (admin only) | Publishes the VIP post into the channel again |
+| `/edit` (admin only) | Rewrite any message from Telegram, premium emoji and all |
 | `/login` (admin only) | Signs the userbot in from Telegram — no terminal |
 | `/userbot` (admin only) | Says whether the userbot has a working session |
 | Admin forwards a channel post to the bot | Bot replies with that channel's id |
@@ -136,6 +137,58 @@ Railway, Koyeb and Fly.io work the same way: set `BOT_TOKEN`, deploy, done.
 
 ---
 
+## Changing the messages from Telegram
+
+The texts are not fixed in the code. Send **`/edit`** to the bot in a private
+chat, pick a message, and type the replacement the way you would type any
+Telegram message.
+
+**Premium emoji come through exactly as typed.** Telegram delivers a message as
+plain text plus a list of entities — offsets saying "custom emoji 5424… covers
+these two characters". [`src/entities.js`](src/entities.js) turns that back into
+the HTML source, so every custom emoji id is stored and re-sent byte for byte.
+Bold, italics, links and code survive the same way.
+
+After saving, the bot sends the message back exactly as members will see it. If
+Telegram will not render it, you find out there rather than in front of a client.
+
+| | |
+| --- | --- |
+| `/edit` | The menu of what can be changed |
+| `/cancel` | Leave the message as it was |
+| `/reset` | Put the original text back (while editing one) |
+
+What can be edited: the welcome/VIP post, its button label, the pre-typed DM,
+the `/link` message with its button label and URL, and the `/ib` message with
+its button label.
+
+### Where they are kept
+
+MongoDB, in its own `vipbot` database with its own user — nothing else on the
+host is touched. [`src/messages.js`](src/messages.js) still holds all the texts,
+but as the **seed**: what is in Mongo wins, and `/reset` drops back to the seed.
+
+Reads come from an in-memory copy, so nothing on the send path waits on a
+database, and a change stream keeps that copy current. **If MongoDB is
+unreachable the bot keeps running on the seeds** — losing the ability to edit is
+an inconvenience, going silent is an outage.
+
+### One thing the bot cannot do
+
+A **bot** may only send custom emoji if it owns a username bought on
+[Fragment](https://fragment.com). @Scarfxxbot does not, so anything *it* sends —
+the welcome, `/link` and `/ib` in a group, `/post` — arrives with the plain
+fallback emoji. The bot notices Telegram's refusal and re-sends automatically, so
+the message always lands.
+
+The **userbot** is the account itself, and the account has Premium, so `/link`,
+`/ib` and `/vip` typed in a DM go out with the real premium emoji.
+
+Same stored text either way. The only fix for the bot half is to buy it a
+Fragment username.
+
+---
+
 ## The userbot
 
 The bot cannot do this half. A bot only ever sees messages addressed to it, and
@@ -224,13 +277,11 @@ npm run userbot
 (`/login` from Telegram covers steps 2 and 3 by itself; the api id and hash from
 step 1 still have to be in `.env` either way.)
 
-On the VPS it runs under PM2 as `vip-userbot`. To set it up there, run
-`npm run userbot:login` over SSH in `/srv/vip-bot/app` so it writes the server's
-own `.env`, or paste the `USERBOT_SESSION=` line in by hand and redeploy.
-
-The deploy script starts the userbot only once `.env` has a session; until then
-it says so and leaves it stopped, rather than crash-looping against Telegram.
-`.env` is never touched by a deploy, so the session survives every push.
+The userbot runs inside the same process as the bot, so there is nothing
+separate to start. Without a valid session it reports that in the log and the
+bot carries on answering — `/link` and `/ib` simply do not expand in DMs until
+`/login` fixes it. `.env` is never touched by a deploy, so the session survives
+every push.
 
 ### Before you run this
 
@@ -294,14 +345,16 @@ nothing inbound, nothing for nginx to route.
 
 ```
 /srv/vip-bot/app          the git checkout (this repo, origin/main)
-/srv/vip-bot/app/.env     the token and settings — untracked, never overwritten
+/srv/vip-bot/app/.env     secrets — untracked, never overwritten by a deploy
 /srv/vip-bot/deploy.sh    installs deps and reloads PM2
 /var/log/vip-bot/         bot.out.log, bot.error.log, deploy.log
+mongodb://…/vipbot        the edited messages
 ```
 
-PM2 runs it as **`vip-bot`**, one fork instance. One instance is deliberate:
-Telegram hands each update to exactly one `getUpdates` caller, so a second copy
-would silently take half the joins.
+PM2 runs one app, **`vip-bot`**, one fork instance — the Telegraf bot and the
+GramJS userbot both live inside it. One instance is deliberate: Telegram hands
+each update to exactly one `getUpdates` caller, so a second copy would silently
+take half the joins.
 
 ```bash
 pm2 logs vip-bot            # follow
@@ -404,11 +457,12 @@ does nothing.
 | Variable | Meaning |
 | --- | --- |
 | `BOT_TOKEN` | **Required.** From BotFather |
+| `MONGODB_URI` | Where the edited messages live |
 | `TELEGRAM_API_ID` | Userbot only. From my.telegram.org |
 | `TELEGRAM_API_HASH` | Userbot only. From my.telegram.org |
 | `USERBOT_SESSION` | Written by `npm run userbot:login` |
 
-**[`src/messages.js`](src/messages.js) — settings, edited with a push:**
+**[`src/messages.js`](src/messages.js) — settings and seed texts, edited with a push:**
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -464,16 +518,18 @@ there. Forward a post from the channel to the bot to confirm the id.
 ## Files
 
 ```
-index.js                  starts the bot — webhook or polling, plus the health endpoint
-userbot.js                starts the /link and /ib expander
-src/bot.js                every command and join handler
-src/userbot.js            the shortcut expander
+index.js                  starts both halves, plus the health endpoint
+src/bot.js                every command and join handler (Telegraf)
+src/userbot.js            the /link and /ib expander (GramJS)
+src/store.js              the messages, in MongoDB, cached in memory
+src/editor.js             the /edit conversation
+src/entities.js           Telegram message -> HTML, premium emoji intact
 src/userbot-auth.js       the /login conversation
 src/env-file.js           the careful .env rewriter both logins share
-src/messages.js           settings + all the texts and buttons  <- edit this one
+src/messages.js           settings + the seed texts
 src/format.js             placeholder and HTML helpers both halves share
 src/config.js             environment variables and public-URL detection
-scripts/userbot-login.js  one-time sign-in — writes USERBOT_SESSION into .env
+scripts/userbot-login.js  sign-in from a terminal, as an alternative to /login
 deploy/                   PM2 ecosystem, deploy.sh and the systemd auto-deploy units
 render.yaml               one-click Render deploy
 ```

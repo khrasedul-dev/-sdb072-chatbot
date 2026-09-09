@@ -10,12 +10,12 @@
     "start": "node index.js",
     "dev": "node index.js --polling",
     "poll": "node index.js --polling",
-    "userbot": "node userbot.js",
     "userbot:login": "node scripts/userbot-login.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "mongodb": "^7.6.0",
     "telegraf": "^4.16.3",
     "telegram": "^2.26.22"
   },

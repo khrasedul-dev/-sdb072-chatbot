@@ -10,14 +10,10 @@
  * Only the admin can start it, only in a private chat, and every message
  * carrying a phone number, code or password is deleted as soon as it is read.
  */
-const { exec } = require("child_process");
-const path = require("path");
-
-const { createClient } = require("./userbot");
+const { createClient, restartUserbot, isRunning, runningAs } = require("./userbot");
 const { writeSessionToEnv, hasSession } = require("./env-file");
 const { TELEGRAM_API_ID, TELEGRAM_API_HASH } = require("./config");
 
-const ROOT = path.join(__dirname, "..");
 const TIMEOUT_MS = 5 * 60 * 1000;
 
 /** One login at a time per admin, keyed by their user id. */
@@ -47,25 +43,6 @@ function cancelLogin(userId) {
  * anything non-numeric is stripped back out here.
  */
 const digitsOnly = (text) => String(text).replace(/\D/g, "");
-
-/**
- * Bring the userbot up with the session that was just written. Best effort: on
- * a machine without PM2 the session is still saved, and the next start picks it
- * up.
- */
-function restartUserbot() {
-  const command =
-    "pm2 describe vip-userbot >/dev/null 2>&1 " +
-    "&& pm2 restart vip-userbot --update-env " +
-    "|| pm2 start deploy/ecosystem.config.cjs --only vip-userbot";
-
-  return new Promise((resolve) => {
-    exec(command, { cwd: ROOT, timeout: 30_000 }, (err) => {
-      if (err) return resolve(false);
-      exec("pm2 save --force", { cwd: ROOT, timeout: 30_000 }, () => resolve(true));
-    });
-  });
-}
 
 /**
  * Run the whole login as a conversation.
@@ -212,12 +189,12 @@ async function startLogin({ userId, send, remove }) {
         "Session saved. Starting the userbot…"
     );
 
-    const restarted = await restartUserbot();
+    // Same process, so this is just a reconnect — no deploy, no restart.
+    const started = await restartUserbot(session);
     await send(
-      restarted
+      started
         ? "Userbot is running. Try /ib in a chat with someone — it should expand."
-        : "Session is saved, but I could not start the userbot from here. " +
-            "Run <code>pm2 start deploy/ecosystem.config.cjs --only vip-userbot</code> on the server."
+        : "Session saved, but the userbot would not connect. Check the logs, or send /login again."
     );
   } catch (err) {
     cleanup();
@@ -226,8 +203,8 @@ async function startLogin({ userId, send, remove }) {
       await send(`Login failed: <code>${message}</code>\n\nSend /login to try again.`).catch(() => {});
     }
   } finally {
-    // This client existed only to obtain the session; the long-running userbot
-    // is a separate process that reads it back from .env.
+    // This client existed only to obtain the session string. The running
+    // userbot is a second connection, started above from that same string.
     try {
       await client.destroy();
     } catch {
@@ -241,9 +218,10 @@ function sessionStatus() {
   if (!TELEGRAM_API_ID || !TELEGRAM_API_HASH) {
     return "Not configured — TELEGRAM_API_ID and TELEGRAM_API_HASH are missing from .env.";
   }
+  if (isRunning()) return `Running as ${runningAs()} — /link, /ib and /vip expand in your DMs.`;
   return hasSession()
-    ? "A session is saved. If /link and /ib have stopped expanding, send /login to sign in again."
-    : "No session saved. Send /login to sign in.";
+    ? "A session is saved but the userbot is not connected. Send /login to sign in again."
+    : "Not signed in. Send /login to sign in.";
 }
 
 module.exports = { startLogin, provideAnswer, cancelLogin, isLoggingIn, sessionStatus, digitsOnly };

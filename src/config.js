@@ -16,6 +16,10 @@ const bool = (value, fallback) => {
 
 const BOT_TOKEN = (process.env.BOT_TOKEN || "").trim();
 
+// Where the editable messages live. Without it the bot falls back to the texts
+// in messages.js and /edit is unavailable — it still runs.
+const MONGODB_URI = (process.env.MONGODB_URI || "").trim();
+
 /* ------------------- settings (messages.js, env wins) ------------------- */
 
 const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || settings.ADMIN_USERNAME || "")
@@ -116,6 +120,7 @@ const MODE = FORCE_POLLING || !PUBLIC_URL ? "polling" : "webhook";
 
 module.exports = {
   BOT_TOKEN,
+  MONGODB_URI,
   ADMIN_USERNAME,
   CHANNEL_ID,
   PORT,

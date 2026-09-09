@@ -6,9 +6,12 @@
  *
  * CommonJS on purpose: PM2 reads this file itself and does not handle ESM.
  *
- * ONE instance, fork mode, and that is not an oversight — Telegram hands each
- * update to exactly one getUpdates caller, so a second instance would silently
- * take half the joins and neither copy would see the whole picture.
+ * ONE app, ONE instance, fork mode. Both halves — the Telegraf bot and the
+ * GramJS userbot — run inside it, so there is one thing to deploy and one log.
+ *
+ * A second instance is not an option: Telegram hands each update to exactly one
+ * getUpdates caller, so the copies would take half the joins each and neither
+ * would see the whole picture.
  */
 module.exports = {
   apps: [
@@ -47,32 +50,5 @@ module.exports = {
       kill_timeout: 10000,
     },
 
-    {
-      // The /link and /ib expander, running as the admin's own account over
-      // MTProto. A separate process from the bot on purpose: a session that
-      // needs re-authorising must not be able to take the bot down with it.
-      name: 'vip-userbot',
-      cwd: '/srv/vip-bot/app',
-      script: 'userbot.js',
-      exec_mode: 'fork',
-      instances: 1,
-
-      env: { NODE_ENV: 'production' },
-
-      autorestart: true,
-      // An invalid session fails on every boot. Give up after a few tries
-      // rather than reconnecting to Telegram in a tight loop, which is how an
-      // account gets rate-limited.
-      max_restarts: 5,
-      restart_delay: 30000,
-      min_uptime: '60s',
-      max_memory_restart: '300M',
-
-      error_file: '/var/log/vip-bot/userbot.error.log',
-      out_file: '/var/log/vip-bot/userbot.out.log',
-      merge_logs: true,
-      time: true,
-      kill_timeout: 10000,
-    },
   ],
 };

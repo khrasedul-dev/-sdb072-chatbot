@@ -1,6 +1,8 @@
 const express = require("express");
 
+const store = require("./src/store");
 const { createBot, ALLOWED_UPDATES } = require("./src/bot");
+const { startUserbot, stopUserbot } = require("./src/userbot");
 const { PRIVATE_COMMANDS, GROUP_COMMANDS } = require("./src/messages");
 const {
   BOT_TOKEN,
@@ -35,6 +37,10 @@ async function withRetry(label, task, attempts = 4) {
 }
 
 async function main() {
+  // Before anything can answer: the messages come from MongoDB, and a failure
+  // here falls back to the texts in messages.js rather than stopping the bot.
+  await store.connect({ label: "bot" });
+
   const bot = createBot(BOT_TOKEN);
   const me = await withRetry("Connecting to Telegram", () => bot.telegram.getMe());
   bot.botInfo = me;
@@ -102,9 +108,16 @@ async function main() {
     .then(() => console.log(`Commands: ${GROUP_COMMANDS.map((c) => "/" + c.command).join(" ")} in groups`))
     .catch((err) => console.warn("[boot] Could not publish the command menu:", err.message));
 
+  // Telegraf and GramJS in the same process. The userbot resolves to null
+  // rather than throwing when it has no valid session, so a signed-out account
+  // costs /link and /ib in DMs and nothing else.
+  await startUserbot();
+
   const shutdown = (signal) => {
     console.log(`\n${signal} received — shutting down.`);
     bot.stop(signal);
+    stopUserbot().catch(() => {});
+    store.close().catch(() => {});
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000).unref();
   };
