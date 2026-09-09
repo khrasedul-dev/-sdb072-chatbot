@@ -1,135 +1,143 @@
 #!/usr/bin/env bash
 #
-# Give the bot its own MongoDB database, once.
+# Give the bot its own MongoDB, fully isolated from anything else on the host.
 #
-#   cd /srv/vip-bot/app && bash scripts/setup-mongo.sh
+#   cd /srv/vip-bot/app && sudo bash scripts/setup-mongo.sh
 #
-# It tries this host's own credentials first and asks only if they do not work.
-# To skip the prompt entirely:
+# It runs a SECOND mongod — its own port (27018), its own data directory, its
+# own auth — so the database another app on this box already runs (on 27017) is
+# never touched: not its config, not its users, not its data. This one exists
+# only for the eight editable messages.
 #
-#   MONGO_ADMIN_USER=root MONGO_ADMIN_PW='…' bash scripts/setup-mongo.sh
-#
-# Creates a `vipbot` database with a `vipbot_app` user scoped to it, writes
-# MONGODB_URI into .env, and restarts the bot. Nothing outside that database is
-# touched — no existing user, database or config is read or modified beyond
-# needing an admin login to create the new user.
-#
-# Safe to run again: it resets the password and rewrites the one .env line.
+# Idempotent: run it again and it just resets the app password and rewrites the
+# one line in .env.
 set -euo pipefail
 
 APP=/srv/vip-bot/app
+PORT=27018
+DATA=/var/lib/mongodb-vipbot
+LOGDIR=/var/log/mongodb-vipbot
+CONF=/etc/mongod-vipbot.conf
+UNIT=/etc/systemd/system/mongod-vipbot.service
 DB=vipbot
 DB_USER=vipbot_app
 
-cd "$APP"
-
+command -v mongod >/dev/null || { echo "mongod is not installed."; exit 1; }
 command -v mongosh >/dev/null || { echo "mongosh is not installed."; exit 1; }
 
-# mongod on this host runs with `authorization: enabled`, so even a brand new
-# database needs an admin login to create its user. Try the credentials this
-# host already keeps before asking anyone to type anything.
-#   MONGO_ADMIN_USER=root MONGO_ADMIN_PW='…' bash scripts/setup-mongo.sh
-# skips the prompts entirely.
-ADMIN_USER="${MONGO_ADMIN_USER:-}"
-ADMIN_PW="${MONGO_ADMIN_PW:-}"
+# The mongodb service account that ships with the server package owns the files.
+MONGO_USER=mongodb
+id "$MONGO_USER" >/dev/null 2>&1 || MONGO_USER=root
 
-try_login() {
-  mongosh --quiet -u "$1" -p "$2" --authenticationDatabase admin \
-    --eval 'db.adminCommand({ping:1})' >/dev/null 2>&1
-}
+echo "### directories"
+mkdir -p "$DATA" "$LOGDIR"
+chown -R "$MONGO_USER":"$MONGO_USER" "$DATA" "$LOGDIR"
 
-if [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PW" ]; then
-  if try_login "$ADMIN_USER" "$ADMIN_PW"; then
-    echo "  signed in as $ADMIN_USER"
-  else
-    echo "  MONGO_ADMIN_USER/MONGO_ADMIN_PW were refused by mongod."
-    exit 1
+echo "### config for the dedicated instance"
+cat > "$CONF" <<CONF
+# A second mongod, only for the VIP bot's editable messages.
+# Nothing to do with the instance on 27017.
+storage:
+  dbPath: $DATA
+  wiredTiger:
+    engineConfig:
+      # Small footprint: this holds a handful of tiny documents.
+      cacheSizeGB: 0.25
+systemLog:
+  destination: file
+  path: $LOGDIR/mongod.log
+  logAppend: true
+net:
+  port: $PORT
+  bindIp: 127.0.0.1
+security:
+  authorization: enabled
+CONF
+
+echo "### systemd service"
+cat > "$UNIT" <<UNIT
+[Unit]
+Description=MongoDB for the VIP bot (isolated instance on $PORT)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=$MONGO_USER
+Group=$MONGO_USER
+ExecStart=/usr/bin/mongod --config $CONF
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=64000
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now mongod-vipbot >/dev/null 2>&1 || systemctl restart mongod-vipbot
+
+echo "### waiting for it to accept connections"
+for i in $(seq 1 30); do
+  # Any reply — even an auth error — means the server is up and listening.
+  if mongosh --quiet --port "$PORT" --eval 'db.runCommand({ping:1})' 2>&1 | grep -qiE 'ok|auth'; then
+    break
   fi
-  ADMIN_FOUND=1
-fi
-
-CRED_FILE=/root/.trucking-mongo
-if [ -z "${ADMIN_FOUND:-}" ] && [ -r "$CRED_FILE" ]; then
-  # Tolerate KEY=value, KEY="value" and KEY='value'.
-  FILE_PW=$(sed -n 's/^MONGO_ROOT_PW=["'"'"']\?\(.*[^"'"'"']\)["'"'"']\?$/\1/p' "$CRED_FILE" | head -1)
-  if [ -n "$FILE_PW" ]; then
-    for candidate in root admin mongoadmin; do
-      if try_login "$candidate" "$FILE_PW"; then
-        ADMIN_USER=$candidate
-        ADMIN_PW=$FILE_PW
-        echo "  signed in as $candidate using $CRED_FILE"
-        break
-      fi
-    done
-  fi
-fi
-
-if [ -z "$ADMIN_USER" ]; then
-  echo "Could not sign in automatically."
-  echo "  tried: root, admin, mongoadmin — with MONGO_ROOT_PW from $CRED_FILE"
-  echo "  (that password may have been rotated, or the admin user has another name)"
-  echo
-  echo "Enter a MongoDB admin login (the one mongod was set up with):"
-  read -rp "  username [root]: " ADMIN_USER
-  ADMIN_USER=${ADMIN_USER:-root}
-  read -rsp "  password: " ADMIN_PW
-  echo
-
-  if ! try_login "$ADMIN_USER" "$ADMIN_PW"; then
-    echo
-    echo "That login was refused. Once you are in, this lists the admin users:"
-    echo "  mongosh -u <user> -p --authenticationDatabase admin \\"
-    echo "    --eval 'db.getSiblingDB(\"admin\").getUsers().users.map(u => u.user)'"
-    exit 1
-  fi
-fi
+  sleep 1
+  [ "$i" = 30 ] && { echo "mongod did not come up — see $LOGDIR/mongod.log"; exit 1; }
+done
 
 APP_PW=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
+CRED=/root/.vipbot-mongo
 
-mongosh --quiet -u "$ADMIN_USER" -p "$ADMIN_PW" --authenticationDatabase admin --eval "
-  const target = db.getSiblingDB('$DB');
-  const exists = target.getUsers().users.some(u => u.user === '$DB_USER');
-  if (exists) {
-    target.updateUser('$DB_USER', { pwd: '$APP_PW' });
-    print('  password reset for $DB_USER');
-  } else {
-    target.createUser({
-      user: '$DB_USER',
-      pwd: '$APP_PW',
-      roles: [{ role: 'readWrite', db: '$DB' }]
-    });
-    print('  created $DB_USER with readWrite on $DB only');
-  }
+# The localhost exception on a fresh instance permits exactly one action —
+# creating the first user — and then closes. So: try to create the admin user
+# through it. Success means this is a new instance; failure (users already
+# exist) sends us to the authenticated path with the password saved last time.
+echo "### app user"
+ROOT_PW=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
+if mongosh --quiet --port "$PORT" --eval \
+     "db.getSiblingDB('admin').createUser({user:'vipbot_root',pwd:'$ROOT_PW',roles:['root']})" \
+     >/dev/null 2>&1; then
+  printf 'MONGO_VIPBOT_ROOT_PW=%s\n' "$ROOT_PW" > "$CRED"
+  chmod 600 "$CRED"
+  echo "  created the admin user for this instance"
+else
+  ROOT_PW=$(sed -n 's/^MONGO_VIPBOT_ROOT_PW=\(.*\)$/\1/p' "$CRED" 2>/dev/null | head -1)
+  [ -n "$ROOT_PW" ] || { echo "  instance already has users but $CRED is missing its admin password — cannot continue"; exit 1; }
+  echo "  admin user already exists — reusing it"
+fi
+
+# Create or reset the scoped app user, authenticated as our own admin.
+mongosh --quiet --port "$PORT" -u vipbot_root -p "$ROOT_PW" --authenticationDatabase admin --eval "
+  const d = db.getSiblingDB('$DB');
+  d.getUser('$DB_USER')
+    ? d.updateUser('$DB_USER', { pwd: '$APP_PW' })
+    : d.createUser({ user: '$DB_USER', pwd: '$APP_PW', roles: [{ role: 'readWrite', db: '$DB' }] });
+  print('  $DB_USER ready with readWrite on $DB');
 "
 
-# replicaSet is what makes change streams work, so an edit reaches every reader
-# at once instead of on the next poll.
-URI="mongodb://$DB_USER:$APP_PW@127.0.0.1:27017/$DB?authSource=$DB&replicaSet=rs0"
+URI="mongodb://$DB_USER:$APP_PW@127.0.0.1:$PORT/$DB?authSource=$DB"
 
-if mongosh --quiet "$URI" --eval 'db.runCommand({ping:1})' >/dev/null 2>&1; then
-  echo "  connection verified"
-else
-  echo "  the new user cannot connect — stopping before .env is changed"
-  exit 1
-fi
+echo "### verify the app user can read and write"
+mongosh --quiet "$URI" --eval "
+  db.__probe.insertOne({ t: new Date() });
+  db.__probe.deleteMany({});
+  print('  ok');
+" || { echo "the new user cannot connect — stopping before .env is changed"; exit 1; }
 
-# Replace the line if it is there, append it if not. Written through a temp file
-# so an interrupted run cannot truncate the bot token sitting in the same file.
+echo "### write MONGODB_URI into .env"
+cd "$APP"
 TMP=$(mktemp)
-if grep -q '^MONGODB_URI=' .env 2>/dev/null; then
-  grep -v '^MONGODB_URI=' .env > "$TMP"
-else
-  cat .env > "$TMP" 2>/dev/null || true
-  printf '\n# The editable messages. Its own database and user.\n' >> "$TMP"
-fi
+grep -v '^MONGODB_URI=' .env 2>/dev/null > "$TMP" || true
+grep -q '^# The editable messages' "$TMP" 2>/dev/null || printf '\n# The editable messages, in the bot'"'"'s own isolated mongod.\n' >> "$TMP"
 printf 'MONGODB_URI=%s\n' "$URI" >> "$TMP"
 install -m 600 "$TMP" .env
 rm -f "$TMP"
-echo "  MONGODB_URI written to $APP/.env"
+echo "  done"
 
-pm2 restart vip-bot --update-env >/dev/null 2>&1 && echo "  vip-bot restarted"
+pm2 restart vip-bot --update-env >/dev/null 2>&1 && echo "### vip-bot restarted"
 
 echo
-echo "Done. Check it took:"
+echo "Check it took:"
 echo "  pm2 logs vip-bot --lines 20 --nostream | grep store"
-echo "Then send /edit to the bot in a private chat."
+echo "Then send /edit to the bot from @tmaxfxx or @rased485."
