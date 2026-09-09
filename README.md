@@ -162,6 +162,19 @@ What can be edited: the welcome/VIP post, its button label, the pre-typed DM,
 the `/link` message with its button label and URL, and the `/ib` message with
 its button label.
 
+### First-time setup
+
+One command on the server, once:
+
+```bash
+cd /srv/vip-bot/app && bash scripts/setup-mongo.sh
+```
+
+It asks for the MongoDB admin login, creates a `vipbot` database with a
+`vipbot_app` user scoped to it, writes `MONGODB_URI` into `.env` and restarts
+the bot. Until that has run, the bot serves the seed texts and `/edit` says it
+cannot save.
+
 ### Where they are kept
 
 MongoDB, in its own `vipbot` database with its own user — nothing else on the
