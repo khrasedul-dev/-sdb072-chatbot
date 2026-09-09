@@ -108,6 +108,60 @@ Railway, Koyeb and Fly.io work the same way: set `BOT_TOKEN`, deploy, done.
 
 ---
 
+## VPS deployment (this bot's live setup)
+
+Running on the RackNerd box at `23.95.192.225`, under PM2, in **long polling** —
+no webhook, nothing inbound, nothing for nginx to route.
+
+```
+/srv/vip-bot/app          the git checkout (this repo, origin/main)
+/srv/vip-bot/app/.env     the token and settings — untracked, never overwritten
+/srv/vip-bot/deploy.sh    installs deps and reloads PM2
+/var/log/vip-bot/         bot.out.log, bot.error.log, deploy.log
+```
+
+PM2 runs it as **`vip-bot`**, one fork instance. One instance is deliberate:
+Telegram hands each update to exactly one `getUpdates` caller, so a second copy
+would silently take half the joins.
+
+```bash
+pm2 logs vip-bot            # follow
+pm2 restart vip-bot         # restart
+pm2 describe vip-bot        # status
+```
+
+The health server binds `127.0.0.1:3101` — port 3000 already belongs to another
+app on that host, and loopback keeps this one off the public internet.
+
+### Push to deploy
+
+`vip-bot-deploy.timer` checks GitHub every minute and, when `origin/main` has
+moved, resets to it, runs `npm ci --omit=dev` and reloads PM2. So:
+
+```bash
+git push origin main        # that is the whole deploy
+```
+
+Give it up to a minute, then `pm2 logs vip-bot` or
+`tail /var/log/vip-bot/deploy.log`.
+
+The service updates `deploy.sh` from the repo *before* running it, so changes to
+the deploy process itself also ship by push.
+
+```bash
+systemctl status vip-bot-deploy.timer     # is it armed
+systemctl start vip-bot-deploy.service    # deploy right now, do not wait
+```
+
+`.env` is gitignored, so `git reset --hard` never touches it — change a setting
+there and `pm2 restart vip-bot`.
+
+The server reads GitHub with its own key at `/root/.ssh/vipbot_deploy`, wired
+through this repo's `core.sshCommand`. It never reads `~/.ssh/config`, so it
+cannot collide with anything else deploying on the same box.
+
+---
+
 ## Editing the messages
 
 Everything the bot says lives in [`src/messages.js`](src/messages.js). Open it,
@@ -171,6 +225,7 @@ does nothing.
 | `ADMIN_USERNAME` | `potlood17` | Who the buttons DM, and who may run `/post` |
 | `CHANNEL_ID` | — | Target for `/post` |
 | `PORT` | `3000` | Health-check port; hosts set this themselves |
+| `HOST` | `0.0.0.0` | Interface to bind; use `127.0.0.1` on a shared VPS |
 | `WEBHOOK_URL` | auto | Override the detected public URL |
 | `BOT_MODE` | auto | `polling` forces long polling |
 | `AUTO_APPROVE_JOIN_REQUESTS` | `true` | Approve join requests automatically |
@@ -209,5 +264,6 @@ index.js            starts the bot — webhook or polling, plus the health endpo
 src/bot.js          every command and join handler
 src/messages.js     all the texts and buttons  <- edit this one
 src/config.js       environment variables and public-URL detection
+deploy/             PM2 ecosystem, deploy.sh and the systemd auto-deploy units
 render.yaml         one-click Render deploy
 ```
