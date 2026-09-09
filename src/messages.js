@@ -28,10 +28,11 @@
 // Telegram username, no @. Every button opens a chat with this account.
 const ADMIN_USERNAME = "potlood17";
 
-// Who may run the admin commands — /edit, /post, /login, /userbot.
+// Who may run the admin commands — /edit, /post, /login, /userbot. Nobody else,
+// whatever their role in a group or channel.
 // Usernames without @, or numeric user ids for accounts that have no username.
 // Send /whoami to the bot and it tells you exactly what to put here.
-const ADMINS = ["potlood17"];
+const ADMINS = ["tmaxfxx", "rased485"];
 
 // Where /post publishes the VIP message.
 //   public channel  -> "@yourchannel"
