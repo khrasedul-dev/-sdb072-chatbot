@@ -1,0 +1,19 @@
+# Render.com free tier. Push this repo to GitHub, then in Render pick
+# "New +" -> "Blueprint" and point it at the repo.
+services:
+  - type: web
+    name: telegram-vip-bot
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      # Render injects RENDER_EXTERNAL_URL, and the bot sets its own webhook
+      # from it — no webhook URL to configure by hand.
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_USERNAME
+        value: potlood17
+      - key: CHANNEL_ID
+        sync: false
