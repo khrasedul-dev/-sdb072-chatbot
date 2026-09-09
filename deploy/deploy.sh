@@ -50,10 +50,10 @@ else
   pm2 start deploy/ecosystem.config.cjs --only vip-bot
 fi
 
-# The userbot needs a signed-in session, and signing in needs someone to type
-# the code Telegram sends. Until that has happened, starting it would only
-# crash-loop against Telegram — so leave it alone and say why.
-if [ -s data/userbot.session ] || grep -qE '^USERBOT_SESSION=.+' .env 2>/dev/null; then
+# The userbot needs USERBOT_SESSION in .env, and putting it there needs someone
+# to type the code Telegram sends. Until that has happened, starting it would
+# only crash-loop against Telegram — so leave it alone and say why.
+if grep -qE '^USERBOT_SESSION=.+' .env 2>/dev/null; then
   echo "### restart userbot"
   if pm2 describe vip-userbot >/dev/null 2>&1; then
     pm2 reload deploy/ecosystem.config.cjs --only vip-userbot --update-env
@@ -61,7 +61,7 @@ if [ -s data/userbot.session ] || grep -qE '^USERBOT_SESSION=.+' .env 2>/dev/nul
     pm2 start deploy/ecosystem.config.cjs --only vip-userbot
   fi
 else
-  echo "### userbot: no session yet — skipping (run 'npm run userbot:login' and copy the session over)"
+  echo "### userbot: no USERBOT_SESSION in .env — skipping (run 'npm run userbot:login')"
 fi
 # --force so saving this app's state never prompts about the others already
 # under PM2 on this host.

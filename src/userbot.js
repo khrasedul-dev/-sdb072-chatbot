@@ -9,8 +9,6 @@
  * The admin types /link or /ib while chatting to someone; the full text is sent
  * in their place, from their own account, so the prospect sees a normal message.
  */
-const fs = require("fs");
-const path = require("path");
 const { TelegramClient } = require("telegram");
 const { StringSession } = require("telegram/sessions");
 const { NewMessage } = require("telegram/events");
@@ -23,8 +21,6 @@ const {
   USERBOT_SESSION,
   USERBOT_PRIVATE_ONLY,
 } = require("./config");
-
-const SESSION_FILE = path.join(__dirname, "..", "data", "userbot.session");
 
 /**
  * What each shortcut expands to. Same messages the bot sends, so editing
@@ -40,27 +36,7 @@ const SNIPPETS = {
   "/vip": M.WELCOME_MESSAGE,
 };
 
-function loadSession() {
-  if (USERBOT_SESSION) return USERBOT_SESSION;
-  try {
-    return fs.readFileSync(SESSION_FILE, "utf8").trim();
-  } catch {
-    return "";
-  }
-}
-
-function saveSession(session) {
-  try {
-    fs.mkdirSync(path.dirname(SESSION_FILE), { recursive: true });
-    fs.writeFileSync(SESSION_FILE, session, { encoding: "utf8", mode: 0o600 });
-    return true;
-  } catch (err) {
-    console.warn("[userbot] Could not save the session file:", err.message);
-    return false;
-  }
-}
-
-function createClient(session = loadSession()) {
+function createClient(session = USERBOT_SESSION) {
   if (!TELEGRAM_API_ID || !TELEGRAM_API_HASH) {
     throw new Error(
       "TELEGRAM_API_ID and TELEGRAM_API_HASH are missing. Get them from https://my.telegram.org -> API development tools."
@@ -124,19 +100,18 @@ async function expand(client, event) {
 }
 
 async function startUserbot() {
-  const session = loadSession();
-  if (!session) {
+  if (!USERBOT_SESSION) {
     throw new Error(
-      "No saved session. Run `npm run userbot:login` once on a machine where you can type the code Telegram sends."
+      "USERBOT_SESSION is not in .env. Run `npm run userbot:login` once, somewhere you can type the code Telegram sends."
     );
   }
 
-  const client = createClient(session);
+  const client = createClient(USERBOT_SESSION);
   await client.connect();
 
   if (!(await client.checkAuthorization())) {
     throw new Error(
-      "The saved session is no longer valid — it was probably signed out from Telegram's active-sessions list. Run `npm run userbot:login` again."
+      "USERBOT_SESSION is no longer valid — the account was probably signed out from Telegram's Devices list. Run `npm run userbot:login` again."
     );
   }
 
@@ -160,4 +135,4 @@ async function startUserbot() {
   return client;
 }
 
-module.exports = { createClient, startUserbot, expand, saveSession, loadSession, SNIPPETS, SESSION_FILE };
+module.exports = { createClient, startUserbot, expand, SNIPPETS };

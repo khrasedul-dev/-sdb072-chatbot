@@ -154,32 +154,48 @@ firing would send it twice. Flip `USERBOT_PRIVATE_ONLY=false` to change that.
 
 ### Signing in
 
-Telegram sends a login code, so this runs once, on a machine where you can type:
+**1. Register an app** at [my.telegram.org](https://my.telegram.org) → API
+development tools. Put the two values in `.env`:
+
+```ini
+TELEGRAM_API_ID=1234567
+TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef
+```
+
+These are separate from the BotFather token, and they identify the *app*, not
+the account — the same pair works for any account you sign in.
+
+**2. Sign in.** Telegram sends a login code, so this needs a real terminal:
 
 ```bash
-# 1. Register an app at https://my.telegram.org -> API development tools
-#    Put the api_id and api_hash in .env as TELEGRAM_API_ID / TELEGRAM_API_HASH
-# 2. Sign in
 npm run userbot:login
 ```
 
 It asks for the phone number, the code Telegram sends, and the two-step password
-if the account has one. The session is written to `data/userbot.session` and
-also printed, so it can be moved to a server as `USERBOT_SESSION`.
+if the account has one. On success it writes `USERBOT_SESSION=…` **into `.env`
+itself** — the only place the userbot looks. Existing lines are left alone, and
+running it again asks before replacing a session that is already there.
+
+**3. Run it:**
 
 ```bash
-npm run userbot        # run it
+npm run userbot
 ```
 
-On the VPS it runs under PM2 as `vip-userbot`, and the deploy script starts it
-only once a session exists — until then it says so and leaves it stopped, rather
-than crash-looping against Telegram.
+On the VPS it runs under PM2 as `vip-userbot`. To set it up there, run
+`npm run userbot:login` over SSH in `/srv/vip-bot/app` so it writes the server's
+own `.env`, or paste the `USERBOT_SESSION=` line in by hand and redeploy.
+
+The deploy script starts the userbot only once `.env` has a session; until then
+it says so and leaves it stopped, rather than crash-looping against Telegram.
+`.env` is never touched by a deploy, so the session survives every push.
 
 ### Before you run this
 
 **The session string is the account.** Anyone holding it is signed in, without a
-password or a code. It is gitignored and written `chmod 600`; keep it that way.
-To cut it off, open Telegram → Settings → Devices and terminate the session.
+password or a code. It lives in `.env`, which is gitignored and written
+`chmod 600` — keep it that way, and never paste it into a chat or an issue.
+To cut it off: Telegram → Settings → Devices → terminate the session.
 
 **Automating a personal account carries a ban risk.** Telegram tolerates
 self-automation like this, but the account — not a disposable bot — is what gets
@@ -355,7 +371,7 @@ does nothing.
 | `WEBHOOK_SECRET` | derived | Header Telegram signs webhook calls with |
 | `TELEGRAM_API_ID` | — | Userbot only. From my.telegram.org |
 | `TELEGRAM_API_HASH` | — | Userbot only. From my.telegram.org |
-| `USERBOT_SESSION` | file | Overrides `data/userbot.session` |
+| `USERBOT_SESSION` | — | Written into `.env` by `npm run userbot:login` |
 | `USERBOT_PRIVATE_ONLY` | `true` | Expand shortcuts in one-to-one chats only |
 
 ---
@@ -392,7 +408,7 @@ src/userbot.js            the shortcut expander
 src/messages.js           all the texts and buttons  <- edit this one
 src/format.js             placeholder and HTML helpers both halves share
 src/config.js             environment variables and public-URL detection
-scripts/userbot-login.js  one-time sign-in for the userbot
+scripts/userbot-login.js  one-time sign-in — writes USERBOT_SESSION into .env
 deploy/                   PM2 ecosystem, deploy.sh and the systemd auto-deploy units
 render.yaml               one-click Render deploy
 ```
