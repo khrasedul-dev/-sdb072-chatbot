@@ -20,20 +20,47 @@ cd "$APP"
 
 command -v mongosh >/dev/null || { echo "mongosh is not installed."; exit 1; }
 
-# An admin login is needed to create a user. Prompted rather than read from a
-# file, so this script never goes looking through anyone's credentials.
-read -rp "MongoDB admin username [root]: " ADMIN_USER
-ADMIN_USER=${ADMIN_USER:-root}
-read -rsp "Password for $ADMIN_USER: " ADMIN_PW
-echo
+# mongod on this host runs with `authorization: enabled`, so even a brand new
+# database needs an admin login to create its user. Try the credentials this
+# host already keeps before asking anyone to type anything.
+ADMIN_USER=""
+ADMIN_PW=""
 
-if ! mongosh --quiet -u "$ADMIN_USER" -p "$ADMIN_PW" --authenticationDatabase admin \
-     --eval 'db.adminCommand({ping:1})' >/dev/null 2>&1; then
+try_login() {
+  mongosh --quiet -u "$1" -p "$2" --authenticationDatabase admin \
+    --eval 'db.adminCommand({ping:1})' >/dev/null 2>&1
+}
+
+CRED_FILE=/root/.trucking-mongo
+if [ -r "$CRED_FILE" ]; then
+  # Tolerate KEY=value, KEY="value" and KEY='value'.
+  FILE_PW=$(sed -n 's/^MONGO_ROOT_PW=["'"'"']\?\(.*[^"'"'"']\)["'"'"']\?$/\1/p' "$CRED_FILE" | head -1)
+  if [ -n "$FILE_PW" ]; then
+    for candidate in root admin mongoadmin; do
+      if try_login "$candidate" "$FILE_PW"; then
+        ADMIN_USER=$candidate
+        ADMIN_PW=$FILE_PW
+        echo "  signed in as $candidate using $CRED_FILE"
+        break
+      fi
+    done
+  fi
+fi
+
+if [ -z "$ADMIN_USER" ]; then
+  echo "Could not sign in with the credentials already on this host."
+  echo "Enter a MongoDB admin login (the one mongod was set up with):"
+  read -rp "  username [root]: " ADMIN_USER
+  ADMIN_USER=${ADMIN_USER:-root}
+  read -rsp "  password: " ADMIN_PW
   echo
-  echo "Could not sign in as $ADMIN_USER."
-  echo "The username and password are the ones mongod was set up with — on this"
-  echo "host they are in /root/.trucking-mongo as MONGO_ROOT_PW."
-  exit 1
+
+  if ! try_login "$ADMIN_USER" "$ADMIN_PW"; then
+    echo
+    echo "That login was refused. To see what admin users exist:"
+    echo "  mongosh -u <user> -p --authenticationDatabase admin --eval 'db.getSiblingDB(\"admin\").getUsers()'"
+    exit 1
+  fi
 fi
 
 APP_PW=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 32)
