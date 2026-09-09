@@ -168,20 +168,21 @@ its button label.
 One command on the server, once:
 
 ```bash
-cd /srv/vip-bot/app && bash scripts/setup-mongo.sh
+cd /srv/vip-bot/app && sudo bash scripts/setup-mongo.sh
 ```
 
-It asks for the MongoDB admin login, creates a `vipbot` database with a
-`vipbot_app` user scoped to it, writes `MONGODB_URI` into `.env` and restarts
-the bot. Until that has run, the bot serves the seed texts and `/edit` says it
-cannot save.
+It stands up a **dedicated mongod** for the bot — its own port (27018), data
+directory, config, systemd unit and auth — creates a `vipbot` database with a
+`vipbot_app` user, writes `MONGODB_URI` into `.env` and restarts the bot. Until
+that has run, the bot serves the seed texts and `/edit` says it cannot save.
 
 ### Where they are kept
 
-MongoDB, in its own `vipbot` database with its own user — nothing else on the
-host is touched. The collection is `vipbot_messages`, so pointing `MONGODB_URI`
-at a database another app already uses is safe too. [`src/messages.js`](src/messages.js) still holds all the texts,
-but as the **seed**: what is in Mongo wins, and `/reset` drops back to the seed.
+A **separate mongod instance** on `127.0.0.1:27018`, isolated from anything
+else on the host — its own process, data and auth. Nothing shares it, so no
+other database is ever opened. [`src/messages.js`](src/messages.js) still holds
+all the texts, but as the **seed**: what is in Mongo wins, and `/reset` drops
+back to the seed.
 
 Reads come from an in-memory copy, so nothing on the send path waits on a
 database, and a change stream keeps that copy current. **If MongoDB is
@@ -363,7 +364,8 @@ nothing inbound, nothing for nginx to route.
 /srv/vip-bot/app/.env     secrets — untracked, never overwritten by a deploy
 /srv/vip-bot/deploy.sh    installs deps and reloads PM2
 /var/log/vip-bot/         bot.out.log, bot.error.log, deploy.log
-mongodb://…/vipbot        the edited messages
+127.0.0.1:27018           dedicated mongod — the edited messages
+/root/.vipbot-mongo       its admin password (for re-running the setup)
 ```
 
 PM2 runs one app, **`vip-bot`**, one fork instance — the Telegraf bot and the
@@ -472,7 +474,7 @@ does nothing.
 | Variable | Meaning |
 | --- | --- |
 | `BOT_TOKEN` | **Required.** From BotFather |
-| `MONGODB_URI` | Where the edited messages live |
+| `MONGODB_URI` | The dedicated mongod, written by the setup script |
 | `MONGODB_COLLECTION` | Collection name, default `vipbot_messages` |
 | `TELEGRAM_API_ID` | Userbot only. From my.telegram.org |
 | `TELEGRAM_API_HASH` | Userbot only. From my.telegram.org |
