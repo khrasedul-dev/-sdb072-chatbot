@@ -7,10 +7,9 @@
  * touching the repo.
  *
  * Reads are served from an in-memory copy so nothing on the hot path waits on a
- * database. The copy is kept current by a change stream, because the bot and the
- * userbot are separate processes: an edit made through the bot has to reach the
- * userbot's /link within a moment, not on its next restart. A slow poll backs
- * that up in case the stream drops.
+ * database. A change stream keeps that copy current when one is available — an
+ * edit made from another machine, or a second deployment, shows up without a
+ * restart — and a slow poll covers the case where change streams are not.
  *
  * If Mongo is unreachable the seeds are used and the bot keeps working. Losing
  * the ability to edit a message is an inconvenience; going silent is an outage.
@@ -20,7 +19,9 @@ const { MongoClient } = require("mongodb");
 const DEFAULTS = require("./messages");
 const { MONGODB_URI } = require("./config");
 
-const COLLECTION = "messages";
+// Namespaced, because MONGODB_URI may point at a database another app already
+// uses — sharing one is fine as long as nothing collides.
+const COLLECTION = (process.env.MONGODB_COLLECTION || "vipbot_messages").trim();
 const REFRESH_MS = 60_000;
 
 /**
@@ -69,16 +70,19 @@ const isEdited = (key) => overrides.has(key);
 
 const isConnected = () => connected;
 
+/** @returns true when the read actually succeeded. */
 async function refresh() {
-  if (!collection) return;
+  if (!collection) return false;
   try {
     const docs = await collection.find({ _id: { $in: KEYS } }).toArray();
     overrides.clear();
     for (const doc of docs) {
       if (typeof doc.value === "string") overrides.set(doc._id, doc.value);
     }
+    return true;
   } catch (err) {
     console.warn("[store] Could not refresh from MongoDB:", err.message);
+    return false;
   }
 }
 
@@ -118,16 +122,35 @@ async function connect({ label = "app" } = {}) {
       maxPoolSize: 5,
     });
     await client.connect();
+    const dbName = client.db().databaseName;
     collection = client.db().collection(COLLECTION);
 
-    await refresh();
+    // `client.connect()` succeeding only means the server answered — with auth
+    // enabled it says nothing about whether this user may read the collection.
+    // Reporting "connected" on that alone hid a database the bot could not
+    // actually use, so the first read has to work before we claim anything.
+    if (!(await refresh())) {
+      connected = false;
+      collection = null;
+      await client.close().catch(() => {});
+      client = null;
+      console.warn(
+        `[store] Reached MongoDB but cannot read "${dbName}.${COLLECTION}". The user in ` +
+          "MONGODB_URI needs readWrite on that database. Using the texts in messages.js."
+      );
+      return false;
+    }
+
     watch();
 
     refreshTimer = setInterval(() => refresh().catch(() => {}), REFRESH_MS);
     refreshTimer.unref?.();
 
     connected = true;
-    console.log(`[store] MongoDB connected (${label}). ${overrides.size} of ${KEYS.length} messages edited.`);
+    console.log(
+      `[store] MongoDB ready (${label}) — ${dbName}.${COLLECTION}, ` +
+        `${overrides.size} of ${KEYS.length} messages edited.`
+    );
     return true;
   } catch (err) {
     console.warn(`[store] MongoDB unavailable (${err.message}) — using the texts in messages.js.`);

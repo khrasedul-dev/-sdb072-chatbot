@@ -179,7 +179,8 @@ cannot save.
 ### Where they are kept
 
 MongoDB, in its own `vipbot` database with its own user — nothing else on the
-host is touched. [`src/messages.js`](src/messages.js) still holds all the texts,
+host is touched. The collection is `vipbot_messages`, so pointing `MONGODB_URI`
+at a database another app already uses is safe too. [`src/messages.js`](src/messages.js) still holds all the texts,
 but as the **seed**: what is in Mongo wins, and `/reset` drops back to the seed.
 
 Reads come from an in-memory copy, so nothing on the send path waits on a
@@ -472,6 +473,7 @@ does nothing.
 | --- | --- |
 | `BOT_TOKEN` | **Required.** From BotFather |
 | `MONGODB_URI` | Where the edited messages live |
+| `MONGODB_COLLECTION` | Collection name, default `vipbot_messages` |
 | `TELEGRAM_API_ID` | Userbot only. From my.telegram.org |
 | `TELEGRAM_API_HASH` | Userbot only. From my.telegram.org |
 | `USERBOT_SESSION` | Written by `npm run userbot:login` |
