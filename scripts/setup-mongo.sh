@@ -119,9 +119,12 @@ mongosh --quiet --port "$PORT" -u vipbot_root -p "$ROOT_PW" --authenticationData
 URI="mongodb://$DB_USER:$APP_PW@127.0.0.1:$PORT/$DB?authSource=$DB"
 
 echo "### verify the app user can read and write"
+# getCollection, because mongosh treats a db property that starts with "_" as
+# an internal and hands back undefined.
 mongosh --quiet "$URI" --eval "
-  db.__probe.insertOne({ t: new Date() });
-  db.__probe.deleteMany({});
+  const probe = db.getCollection('setup_probe');
+  probe.insertOne({ t: new Date() });
+  probe.deleteMany({});
   print('  ok');
 " || { echo "the new user cannot connect — stopping before .env is changed"; exit 1; }
 
