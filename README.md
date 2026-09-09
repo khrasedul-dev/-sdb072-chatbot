@@ -27,6 +27,8 @@ everywhere.
 | Someone **requests to join** | Request approved, then the welcome arrives as a DM |
 | Bot added as **administrator** | Posts the VIP message there immediately, and DMs the chat id to whoever added it |
 | `/post` (admin only) | Publishes the VIP post into the channel again |
+| `/login` (admin only) | Signs the userbot in from Telegram — no terminal |
+| `/userbot` (admin only) | Says whether the userbot has a working session |
 | Admin forwards a channel post to the bot | Bot replies with that channel's id |
 
 The **JOIN FREE VIP** button opens `t.me/<admin>` with the join request
@@ -165,6 +167,32 @@ firing would send it twice. Flip `USERBOT_PRIVATE_ONLY=false` to change that.
 
 ### Signing in
 
+Two ways in. Both end up writing the same `USERBOT_SESSION` line into `.env`.
+
+#### From Telegram — no terminal needed
+
+Send **`/login`** to the bot in a private chat. It walks through the phone
+number, the code and the two-step password, then saves the session and starts
+the userbot itself.
+
+This is the one to use when the session stops working and you are not at a
+machine with SSH. `/userbot` says whether a session is saved; `/cancel` aborts.
+
+Two things it does that matter:
+
+- **Every message you type is deleted as soon as it is read** — the phone
+  number, the code and the password never stay in the chat history.
+- **It asks for the code with spaces between the digits** — `1 2 3 4 5`, not
+  `12345`. Telegram invalidates any login code that appears in a Telegram chat
+  as a plain number; that is an anti-phishing measure and it fires on your own
+  chat with your own bot too. Spacing the digits is what gets a usable code
+  through.
+
+Only the account in `ADMIN_USERNAME` can start it, and only in a private chat —
+in a group the code would be readable by everyone there.
+
+#### From a terminal
+
 **1. Register an app** at [my.telegram.org](https://my.telegram.org) → API
 development tools. Put the two values in `.env`:
 
@@ -192,6 +220,9 @@ running it again asks before replacing a session that is already there.
 ```bash
 npm run userbot
 ```
+
+(`/login` from Telegram covers steps 2 and 3 by itself; the api id and hash from
+step 1 still have to be in `.env` either way.)
 
 On the VPS it runs under PM2 as `vip-userbot`. To set it up there, run
 `npm run userbot:login` over SSH in `/srv/vip-bot/app` so it writes the server's
@@ -416,6 +447,10 @@ opened a chat with it. The fix is to switch the channel's invite link to
 **"Request to join"** — approving the request is what opens the DM. Everyone
 joining through a plain link will only see the pinned VIP post.
 
+**/link and /ib stopped expanding in DMs.** The userbot session was signed out
+— Telegram's Devices list, or a password change. Send `/login` to the bot to
+sign back in; `/userbot` confirms the state first.
+
 **Nothing happens at all after deploying.** Check the logs for
 `Bot @name is online in webhook mode`. Two copies of the bot running at once
 (say a local `npm run poll` and a deployed instance) fight over updates — stop
@@ -433,6 +468,8 @@ index.js                  starts the bot — webhook or polling, plus the health
 userbot.js                starts the /link and /ib expander
 src/bot.js                every command and join handler
 src/userbot.js            the shortcut expander
+src/userbot-auth.js       the /login conversation
+src/env-file.js           the careful .env rewriter both logins share
 src/messages.js           settings + all the texts and buttons  <- edit this one
 src/format.js             placeholder and HTML helpers both halves share
 src/config.js             environment variables and public-URL detection

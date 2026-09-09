@@ -6,6 +6,13 @@ const { message } = require("telegraf/filters");
 const M = require("./messages");
 const { stripCustomEmoji, toPlainText, render } = require("./format");
 const {
+  startLogin,
+  provideAnswer,
+  cancelLogin,
+  isLoggingIn,
+  sessionStatus,
+} = require("./userbot-auth");
+const {
   ADMIN_USERNAME,
   CHANNEL_ID,
   AUTO_APPROVE_JOIN_REQUESTS,
@@ -323,6 +330,43 @@ function createBot(token) {
           '"Post Messages" permission.'
       );
     }
+  });
+
+  /* --- signing the userbot in, without needing a terminal --- */
+
+  bot.command("userbot", async (ctx) => {
+    if (!isAdmin(ctx) || ctx.chat.type !== "private") return;
+    await ctx.reply(sessionStatus());
+  });
+
+  bot.command("login", async (ctx) => {
+    if (!isAdmin(ctx)) return;
+    if (ctx.chat.type !== "private") {
+      // A login code posted in a group would be readable by everyone there.
+      return ctx.reply("Send /login in a private chat with me, not in a group.");
+    }
+
+    await startLogin({
+      userId: ctx.from.id,
+      send: (html) => sendHtml(ctx.telegram, ctx.chat.id, html),
+      remove: (messageId) => ctx.telegram.deleteMessage(ctx.chat.id, messageId),
+    });
+  });
+
+  bot.command("cancel", async (ctx) => {
+    if (!isAdmin(ctx) || ctx.chat.type !== "private") return;
+    if (!cancelLogin(ctx.from.id)) await ctx.reply("Nothing to cancel.");
+  });
+
+  // While a login is running, the admin's plain messages are its answers.
+  // Registered before the other message handlers so a phone number or a code
+  // never falls through to them.
+  bot.on(message("text"), async (ctx, next) => {
+    if (ctx.chat.type !== "private" || !isAdmin(ctx)) return next();
+    if (ctx.message.text.startsWith("/")) return next();
+    if (!isLoggingIn(ctx.from.id)) return next();
+
+    provideAnswer(ctx.from.id, ctx.message.text.trim(), ctx.message.message_id);
   });
 
   // Forwarding any channel post to the bot is the easiest way to learn a private

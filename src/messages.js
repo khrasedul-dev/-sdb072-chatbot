@@ -135,6 +135,8 @@ const PRIVATE_COMMANDS = [
   { command: "ib", description: "Change your IB to 33772566 🔄" },
 ];
 
+// Admin-only commands (/post, /login, /userbot, /cancel) are deliberately not
+// listed — they would show in every member's "/" menu and only ever be refused.
 const GROUP_COMMANDS = [
   { command: "link", description: "Open a PU Prime account 🔗" },
   { command: "ib", description: "Change your IB to 33772566 🔄" },

@@ -9,12 +9,13 @@
  *
  * The session string is equivalent to being logged into the account. Treat it
  * exactly like the password: .env is gitignored and written chmod 600.
+ *
+ * There is a second way in with no terminal at all: send /login to the bot in a
+ * private chat. See src/userbot-auth.js.
  */
-const fs = require("fs");
-const path = require("path");
 const readline = require("readline");
 
-const ENV_FILE = process.env.USERBOT_LOGIN_ENV_FILE || path.join(__dirname, "..", ".env");
+const { ENV_FILE, readEnv, writeSessionToEnv } = require("../src/env-file");
 
 function ask(question, { hidden = false } = {}) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -33,46 +34,6 @@ function ask(question, { hidden = false } = {}) {
       resolve(answer.trim());
     });
   });
-}
-
-const readEnv = () => {
-  try {
-    return fs.readFileSync(ENV_FILE, "utf8");
-  } catch {
-    return "";
-  }
-};
-
-/**
- * Replace USERBOT_SESSION if it is already there, append it if not, and leave
- * every other line — including comments — exactly as it was. Written to a temp
- * file and renamed, so an interrupted write cannot truncate the token that is
- * already in there.
- */
-function writeSessionToEnv(session) {
-  let contents = readEnv();
-  const line = `USERBOT_SESSION=${session}`;
-
-  if (/^USERBOT_SESSION=.*$/m.test(contents)) {
-    contents = contents.replace(/^USERBOT_SESSION=.*$/m, line);
-  } else if (/^#\s*USERBOT_SESSION=.*$/m.test(contents)) {
-    // Uncomment the placeholder .env.example ships with.
-    contents = contents.replace(/^#\s*USERBOT_SESSION=.*$/m, line);
-  } else {
-    if (contents && !contents.endsWith("\n")) contents += "\n";
-    contents += `\n# Written by \`npm run userbot:login\` on ${new Date().toISOString().slice(0, 10)}.\n`;
-    contents += "# This string IS the account — anyone holding it is signed in.\n";
-    contents += `${line}\n`;
-  }
-
-  const tmp = `${ENV_FILE}.tmp`;
-  fs.writeFileSync(tmp, contents, { encoding: "utf8", mode: 0o600 });
-  fs.renameSync(tmp, ENV_FILE);
-  try {
-    fs.chmodSync(ENV_FILE, 0o600);
-  } catch {
-    // Windows has no POSIX modes; nothing to do.
-  }
 }
 
 async function main() {
@@ -128,8 +89,6 @@ async function main() {
   await client.disconnect();
   process.exit(0);
 }
-
-module.exports = { writeSessionToEnv, ENV_FILE };
 
 if (require.main === module) {
   main().catch((err) => {
