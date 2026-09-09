@@ -1,0 +1,11 @@
+[Unit]
+Description=Check GitHub for new VIP bot commits every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=vip-bot-deploy.service
+
+[Install]
+WantedBy=timers.target

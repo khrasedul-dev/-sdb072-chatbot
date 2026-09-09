@@ -17,6 +17,11 @@ const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || "potlood17")
 const CHANNEL_ID = (process.env.CHANNEL_ID || "").trim();
 
 const PORT = Number(process.env.PORT) || 3000;
+
+// Cloud hosts route to the container from outside, so the health server has to
+// listen on every interface there. On a VPS that already runs other apps, set
+// HOST=127.0.0.1 to keep it off the public internet.
+const HOST = (process.env.HOST || "0.0.0.0").trim();
 const AUTO_APPROVE_JOIN_REQUESTS = bool(process.env.AUTO_APPROVE_JOIN_REQUESTS, true);
 const WELCOME_IN_GROUP = bool(process.env.WELCOME_IN_GROUP, true);
 const WELCOME_IN_DM = bool(process.env.WELCOME_IN_DM, true);
@@ -82,6 +87,7 @@ module.exports = {
   ADMIN_USERNAME,
   CHANNEL_ID,
   PORT,
+  HOST,
   AUTO_APPROVE_JOIN_REQUESTS,
   WELCOME_IN_GROUP,
   WELCOME_IN_DM,

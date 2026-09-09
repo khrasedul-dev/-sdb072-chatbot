@@ -1,0 +1,18 @@
+[Unit]
+Description=Update and restart the VIP bot from origin/main
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# Update the deployer itself before running it. A script that rewrites its own
+# file while bash is still reading it would execute the seam between the old and
+# new bytes, so the new copy is put in place here and run on the next line.
+ExecStartPre=-/bin/sh -c 'cd /srv/vip-bot/app && git fetch -q origin main && git show origin/main:deploy/deploy.sh > /tmp/vipbot-deploy.next && install -m 755 /tmp/vipbot-deploy.next /srv/vip-bot/deploy.sh'
+
+# systemd will not start a second copy while this one runs, so a slow npm ci
+# can never be overlapped by the next timer tick.
+ExecStart=/srv/vip-bot/deploy.sh --pull
+TimeoutStartSec=900
+User=root

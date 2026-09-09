@@ -5,6 +5,7 @@ const { COMMAND_DESCRIPTIONS } = require("./src/messages");
 const {
   BOT_TOKEN,
   PORT,
+  HOST,
   MODE,
   PUBLIC_URL,
   WEBHOOK_PATH,
@@ -59,7 +60,7 @@ async function main() {
     app.use(webhook);
   }
 
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, HOST, () => {
     console.log("====================================================");
     console.log(`Bot @${me.username} is online in ${MODE} mode.`);
     if (MODE === "webhook") {
@@ -67,7 +68,7 @@ async function main() {
     } else {
       console.log("Webhook:  none — no public URL found, using long polling.");
     }
-    console.log(`Health:   http://localhost:${PORT}/`);
+    console.log(`Health:   http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}/`);
     console.log(`Admin DM: @${ADMIN_USERNAME}`);
     console.log(`Join requests: ${AUTO_APPROVE_JOIN_REQUESTS ? "auto-approved" : "left for an admin"}`);
     console.log("====================================================");
