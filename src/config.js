@@ -2,29 +2,45 @@ require("dotenv").config();
 
 const crypto = require("crypto");
 
+// Everything that is not a secret has its default in messages.js, next to the
+// texts it belongs with. .env only has to carry the things that must not be
+// committed — and an env var still wins if a host needs to override one.
+const settings = require("./messages");
+
 const bool = (value, fallback) => {
   if (value === undefined || value === "") return fallback;
   return !/^(0|false|no|off)$/i.test(String(value).trim());
 };
 
+/* ---------------------------- secrets (.env) ---------------------------- */
+
 const BOT_TOKEN = (process.env.BOT_TOKEN || "").trim();
-const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || "potlood17")
+
+/* ------------------- settings (messages.js, env wins) ------------------- */
+
+const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || settings.ADMIN_USERNAME || "")
   .trim()
   .replace(/^@/, "");
 
-// The channel/group /post publishes the VIP message to. "@name" for a public
-// channel, "-100…" for a private one.
-const CHANNEL_ID = (process.env.CHANNEL_ID || "").trim();
+const CHANNEL_ID = (process.env.CHANNEL_ID || settings.CHANNEL_ID || "").trim();
+
+const AUTO_APPROVE_JOIN_REQUESTS = bool(
+  process.env.AUTO_APPROVE_JOIN_REQUESTS,
+  settings.AUTO_APPROVE_JOIN_REQUESTS
+);
+const WELCOME_IN_GROUP = bool(process.env.WELCOME_IN_GROUP, settings.WELCOME_IN_GROUP);
+const WELCOME_IN_DM = bool(process.env.WELCOME_IN_DM, settings.WELCOME_IN_DM);
+
+/* ------------------------ where the process runs ------------------------ */
+// The host decides these — PM2 sets them in deploy/ecosystem.config.cjs, and
+// cloud platforms set PORT themselves. Nothing to put in .env.
 
 const PORT = Number(process.env.PORT) || 3000;
 
 // Cloud hosts route to the container from outside, so the health server has to
-// listen on every interface there. On a VPS that already runs other apps, set
-// HOST=127.0.0.1 to keep it off the public internet.
+// listen on every interface there. On a VPS that already runs other apps,
+// HOST=127.0.0.1 keeps it off the public internet.
 const HOST = (process.env.HOST || "0.0.0.0").trim();
-const AUTO_APPROVE_JOIN_REQUESTS = bool(process.env.AUTO_APPROVE_JOIN_REQUESTS, true);
-const WELCOME_IN_GROUP = bool(process.env.WELCOME_IN_GROUP, true);
-const WELCOME_IN_DM = bool(process.env.WELCOME_IN_DM, true);
 
 // `npm run poll`, or BOT_MODE=polling, forces long polling even on a host
 // that exposes a public URL.
@@ -88,12 +104,13 @@ const WEBHOOK_PATH =
 const TELEGRAM_API_ID = Number(process.env.TELEGRAM_API_ID) || 0;
 const TELEGRAM_API_HASH = (process.env.TELEGRAM_API_HASH || '').trim();
 
-// Overrides data/userbot.session — for hosts without a persistent disk.
+// Written into .env by `npm run userbot:login`. GramJS cannot connect at all
+// without it, so the userbot refuses to start when it is missing.
 const USERBOT_SESSION = (process.env.USERBOT_SESSION || '').trim();
 
 // Only expand shortcuts in one-to-one chats. In a group the bot answers /link
 // already, and both firing would send the message twice.
-const USERBOT_PRIVATE_ONLY = bool(process.env.USERBOT_PRIVATE_ONLY, true);
+const USERBOT_PRIVATE_ONLY = bool(process.env.USERBOT_PRIVATE_ONLY, settings.USERBOT_PRIVATE_ONLY);
 
 const MODE = FORCE_POLLING || !PUBLIC_URL ? "polling" : "webhook";
 

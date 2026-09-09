@@ -45,11 +45,22 @@ only on the bot being an administrator (step 3).
 ### 2. Configure
 
 ```bash
-cp .env.example .env
+cp .env.example .env     # then fill in BOT_TOKEN
 ```
 
-Fill in `BOT_TOKEN`. `ADMIN_USERNAME` and `CHANNEL_ID` are optional but needed
-for the DM button and `/post` to point at the right places.
+`.env` holds **secrets only** — the bot token, and the userbot's API
+credentials. Everything else lives at the top of
+[`src/messages.js`](src/messages.js), next to the texts it belongs with:
+
+```js
+const ADMIN_USERNAME = "potlood17";   // who the buttons DM
+const CHANNEL_ID = "";                // where /post publishes
+const WELCOME_IN_GROUP = true;        // welcome new members in the group
+```
+
+That way changing the admin or the channel is a push, not an SSH session. An
+environment variable of the same name still wins if a host ever needs to
+override one.
 
 ### 3. Add the bot to the channel / group
 
@@ -301,8 +312,9 @@ cannot collide with anything else deploying on the same box.
 
 ## Editing the messages
 
-Everything the bot says lives in [`src/messages.js`](src/messages.js). Open it,
-change the text between the backticks, restart. No database, no dashboard.
+Everything the bot says — and every non-secret setting — lives in
+[`src/messages.js`](src/messages.js). Open it, change the text between the
+backticks, push. No database, no dashboard, no `.env` edit.
 
 **Formatting** is Telegram HTML:
 
@@ -356,23 +368,39 @@ does nothing.
 
 ## Settings
 
-| Variable | Default | Meaning |
+**`.env` — secrets, never committed:**
+
+| Variable | Meaning |
+| --- | --- |
+| `BOT_TOKEN` | **Required.** From BotFather |
+| `TELEGRAM_API_ID` | Userbot only. From my.telegram.org |
+| `TELEGRAM_API_HASH` | Userbot only. From my.telegram.org |
+| `USERBOT_SESSION` | Written by `npm run userbot:login` |
+
+**[`src/messages.js`](src/messages.js) — settings, edited with a push:**
+
+| Setting | Default | Meaning |
 | --- | --- | --- |
-| `BOT_TOKEN` | — | **Required.** From BotFather |
 | `ADMIN_USERNAME` | `potlood17` | Who the buttons DM, and who may run `/post` |
-| `CHANNEL_ID` | — | Target for `/post` |
-| `PORT` | `3000` | Health-check port; hosts set this themselves |
-| `HOST` | `0.0.0.0` | Interface to bind; use `127.0.0.1` on a shared VPS |
-| `WEBHOOK_URL` | auto | Override the detected public URL |
-| `BOT_MODE` | auto | `polling` forces long polling |
+| `CHANNEL_ID` | `""` | Target for `/post` |
 | `AUTO_APPROVE_JOIN_REQUESTS` | `true` | Approve join requests automatically |
 | `WELCOME_IN_GROUP` | `true` | Post the welcome in the group itself |
 | `WELCOME_IN_DM` | `true` | Also send the welcome privately |
-| `WEBHOOK_SECRET` | derived | Header Telegram signs webhook calls with |
-| `TELEGRAM_API_ID` | — | Userbot only. From my.telegram.org |
-| `TELEGRAM_API_HASH` | — | Userbot only. From my.telegram.org |
-| `USERBOT_SESSION` | — | Written into `.env` by `npm run userbot:login` |
 | `USERBOT_PRIVATE_ONLY` | `true` | Expand shortcuts in one-to-one chats only |
+
+**Where the process runs** — set by `deploy/ecosystem.config.cjs` on the VPS, or
+by the platform on a cloud host. Nothing to put in `.env`.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PORT` | `3000` | Health-check port |
+| `HOST` | `0.0.0.0` | Interface to bind; `127.0.0.1` on a shared VPS |
+| `BOT_MODE` | auto | `polling` forces long polling |
+| `WEBHOOK_URL` | auto | Override the detected public URL |
+| `WEBHOOK_SECRET` | derived | Header Telegram signs webhook calls with |
+
+Any of the `src/messages.js` settings can still be overridden by an environment
+variable of the same name.
 
 ---
 
@@ -405,7 +433,7 @@ index.js                  starts the bot — webhook or polling, plus the health
 userbot.js                starts the /link and /ib expander
 src/bot.js                every command and join handler
 src/userbot.js            the shortcut expander
-src/messages.js           all the texts and buttons  <- edit this one
+src/messages.js           settings + all the texts and buttons  <- edit this one
 src/format.js             placeholder and HTML helpers both halves share
 src/config.js             environment variables and public-URL detection
 scripts/userbot-login.js  one-time sign-in — writes USERBOT_SESSION into .env

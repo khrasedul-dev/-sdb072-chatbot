@@ -1,6 +1,7 @@
 /**
  * ====================================================================
- *  ALL BOT TEXTS LIVE HERE — edit this one file to change any message.
+ *  EVERYTHING ABOUT THIS CLIENT LIVES HERE — settings and texts.
+ *  Edit this one file; .env holds only secrets.
  * ====================================================================
  *
  *  Formatting: Telegram HTML.
@@ -18,6 +19,38 @@
  *  If Telegram rejects them the bot automatically re-sends the message
  *  with plain emoji instead, so nothing ever fails to deliver.
  */
+
+/* ============================ SETTINGS ============================ */
+// None of these are secret, so they belong in the repo rather than in .env —
+// change one, push, and the server has it a minute later. An environment
+// variable of the same name still wins if a host ever needs to override one.
+
+// Telegram username, no @. Every button opens a chat with this account, and
+// it is the only one allowed to run /post.
+const ADMIN_USERNAME = "potlood17";
+
+// Where /post publishes the VIP message.
+//   public channel  -> "@yourchannel"
+//   private channel -> "-100xxxxxxxxxx"
+// To find a private channel's id, forward any post from it to the bot.
+const CHANNEL_ID = "";
+
+// Accept "request to join" invite links automatically. Keep this on: approving
+// is what earns the bot permission to DM the new member, and for a channel that
+// is the only way a joiner can be reached at all.
+const AUTO_APPROVE_JOIN_REQUESTS = true;
+
+// Post the welcome in the group itself when someone joins.
+const WELCOME_IN_GROUP = true;
+
+// Also send the welcome privately, when Telegram allows it.
+const WELCOME_IN_DM = true;
+
+// Userbot: only expand /link and /ib in one-to-one chats. Keep this on — in a
+// group the bot already answers them, and both firing would send them twice.
+const USERBOT_PRIVATE_ONLY = true;
+
+/* ============================= MESSAGES ============================ */
 
 // Shown on /start, and to anyone who joins a group/channel or is approved
 // through a join request.
@@ -108,6 +141,13 @@ const GROUP_COMMANDS = [
 ];
 
 module.exports = {
+  ADMIN_USERNAME,
+  CHANNEL_ID,
+  AUTO_APPROVE_JOIN_REQUESTS,
+  WELCOME_IN_GROUP,
+  WELCOME_IN_DM,
+  USERBOT_PRIVATE_ONLY,
+
   WELCOME_MESSAGE,
   WELCOME_BUTTON_TEXT,
   WELCOME_PREFILLED_DM,
