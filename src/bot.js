@@ -161,12 +161,29 @@ function createBot(token) {
       );
     }
 
-    await ctx.reply(
+    const confirmation =
       `Posted in ${chat.title || target} and pinned it.` +
-        (replacing
-          ? "\n\nThat new message is the one /edit will keep up to date — the older post stays where it is."
-          : "\n\nSend /edit whenever you want to rewrite it; the pinned message updates itself.")
-    );
+      (replacing
+        ? "\n\nThat new message is the one /edit will keep up to date, and the previous one has been unpinned."
+        : "\n\nSend /edit whenever you want to rewrite it; the pinned message updates itself.");
+
+    // Run inside a group, /post should leave that group holding nothing but the
+    // pinned post — so the command is cleared and the answer goes privately.
+    if (["group", "supergroup"].includes(ctx.chat.type)) {
+      try {
+        await ctx.deleteMessage(ctx.message.message_id);
+      } catch {
+        // No "Delete Messages" right. The command stays; not worth failing over.
+      }
+      try {
+        await ctx.telegram.sendMessage(ctx.from.id, confirmation);
+        return;
+      } catch {
+        // They have never opened a chat with the bot — answer in the group.
+      }
+    }
+
+    await ctx.reply(confirmation);
   });
 
   /* ------------------ editing the messages from Telegram ----------------- */
