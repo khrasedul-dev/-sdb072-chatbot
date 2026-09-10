@@ -41,8 +41,6 @@ const AUTO_APPROVE_JOIN_REQUESTS = bool(
   process.env.AUTO_APPROVE_JOIN_REQUESTS,
   settings.AUTO_APPROVE_JOIN_REQUESTS
 );
-const WELCOME_IN_GROUP = bool(process.env.WELCOME_IN_GROUP, settings.WELCOME_IN_GROUP);
-const WELCOME_IN_DM = bool(process.env.WELCOME_IN_DM, settings.WELCOME_IN_DM);
 
 /* ------------------------ where the process runs ------------------------ */
 // The host decides these — PM2 sets them in deploy/ecosystem.config.cjs, and
@@ -136,8 +134,6 @@ module.exports = {
   PORT,
   HOST,
   AUTO_APPROVE_JOIN_REQUESTS,
-  WELCOME_IN_GROUP,
-  WELCOME_IN_DM,
   PUBLIC_URL,
   WEBHOOK_SECRET,
   WEBHOOK_PATH,

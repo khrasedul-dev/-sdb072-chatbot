@@ -40,16 +40,10 @@ const ADMINS = ["tmaxfxx", "rased485"];
 // To find a private channel's id, forward any post from it to the bot.
 const CHANNEL_ID = "";
 
-// Accept "request to join" invite links automatically. Keep this on: approving
-// is what earns the bot permission to DM the new member, and for a channel that
-// is the only way a joiner can be reached at all.
+// Accept "request to join" invite links automatically. Nobody is messaged
+// either way — the pinned post is the only thing the bot puts in a chat — so
+// this only decides whether people get in without an admin tapping Approve.
 const AUTO_APPROVE_JOIN_REQUESTS = true;
-
-// Post the welcome in the group itself when someone joins.
-const WELCOME_IN_GROUP = true;
-
-// Also send the welcome privately, when Telegram allows it.
-const WELCOME_IN_DM = true;
 
 // Userbot: only expand /link and /ib in one-to-one chats. Keep this on — in a
 // group the bot already answers them, and both firing would send them twice.
@@ -57,8 +51,10 @@ const USERBOT_PRIVATE_ONLY = true;
 
 /* ============================= MESSAGES ============================ */
 
-// Shown on /start, and to anyone who joins a group/channel or is approved
-// through a join request.
+// THE PINNED POST. The bot posts this once when it is added to a group or
+// channel and pins it, then edits that same message every time this text
+// changes — so new members read it on arrival without anyone being greeted
+// individually. Also what /start replies with in a private chat.
 const WELCOME_MESSAGE = `🚀 WANT TO JOIN OUR FREE VIP? 🚀
 
 <tg-emoji emoji-id="5224450179368767019">🌎</tg-emoji> CLICK THE BUTTON BELOW TO ENTER A NEW WORLD OF TRADING! <tg-emoji emoji-id="5424972470023104089">🔥</tg-emoji>
@@ -130,19 +126,14 @@ Want to move your PU Prime account under our IB? Follow these steps 👇
 
 const IB_BUTTON_TEXT = "📩 Need Help? Contact Admin";
 
-// What Telegram shows in the "/" menu. Two lists, because the menu is scoped:
-// /start only makes sense one-to-one, while /link and /ib are the two commands
-// members should be able to pull up inside the group. In a group Telegram
-// renders them as /link@yourbot so it is clear which bot answers.
+// What Telegram shows in the "/" menu — private chats only. The bot answers no
+// commands inside a group, so the group menu is cleared at startup rather than
+// listing commands that would stay silent.
+//
+// Admin-only commands (/post, /edit, /login, /userbot, /cancel) are deliberately
+// not listed: they would show in every member's menu and only ever be refused.
 const PRIVATE_COMMANDS = [
   { command: "start", description: "Join our FREE VIP 💎" },
-  { command: "link", description: "Open a PU Prime account 🔗" },
-  { command: "ib", description: "Change your IB to 33772566 🔄" },
-];
-
-// Admin-only commands (/post, /login, /userbot, /cancel) are deliberately not
-// listed — they would show in every member's "/" menu and only ever be refused.
-const GROUP_COMMANDS = [
   { command: "link", description: "Open a PU Prime account 🔗" },
   { command: "ib", description: "Change your IB to 33772566 🔄" },
 ];
@@ -152,8 +143,6 @@ module.exports = {
   ADMINS,
   CHANNEL_ID,
   AUTO_APPROVE_JOIN_REQUESTS,
-  WELCOME_IN_GROUP,
-  WELCOME_IN_DM,
   USERBOT_PRIVATE_ONLY,
 
   WELCOME_MESSAGE,
@@ -165,5 +154,4 @@ module.exports = {
   IB_MESSAGE,
   IB_BUTTON_TEXT,
   PRIVATE_COMMANDS,
-  GROUP_COMMANDS,
 };

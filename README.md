@@ -2,9 +2,10 @@
 
 One process, two halves, one set of messages:
 
-- **The bot** ([Telegraf](https://telegraf.js.org/)) — welcomes everyone who
-  joins the channel or group, answers `/start`, `/link` and `/ib`, and publishes
-  the VIP post with a button that opens the admin's DM with a message already
+- **The bot** ([Telegraf](https://telegraf.js.org/)) — posts the VIP message into
+  the channel or group **once**, pins it, and keeps that pinned message up to
+  date as the text is edited. In a private chat it answers `/start`, `/link` and
+  `/ib`, each with a button that opens the admin's DM with a message already
   typed out.
 - **The userbot** ([GramJS](https://gram.js.org/)) — runs as the admin's own
   account so that typing `/link` or `/ib` while chatting to a prospect sends the
@@ -19,14 +20,14 @@ so a text edited once changes everywhere at once.
 
 | Trigger | What happens |
 | --- | --- |
-| `/start` in a private chat | Sends the welcome message + **JOIN FREE VIP** button |
-| `/link` | Sends the PU Prime signup text + link button + DM button — works in groups too |
-| `/ib` | Sends the IB-change instructions + contact button — works in groups too |
-| Someone joins a **group** | Welcome posted in the group, and sent as a DM when possible |
-| Someone joins a **channel** | Welcome sent as a DM (channels get no per-join post) |
-| Someone **requests to join** | Request approved, then the welcome arrives as a DM |
-| Bot added as **administrator** | Posts the VIP message there immediately, and DMs the chat id to whoever added it |
-| `/post` (admin only) | Publishes the VIP post into the channel again |
+| `/start` in a private chat | Sends the VIP message + **JOIN FREE VIP** button |
+| `/link` in a private chat | Sends the PU Prime signup text + link button + DM button |
+| `/ib` in a private chat | Sends the IB-change instructions + contact button |
+| Any command **in a group** | Nothing — the bot does not answer commands there |
+| Someone **joins** | Nothing is sent. They read the pinned post |
+| Someone **requests to join** | Request approved, silently |
+| Bot added as **administrator** | Posts the VIP message there once, **pins it**, and DMs the chat id to whoever added it |
+| `/post` (admin only) | Posts the message and pins it — run it inside a group the bot is already in |
 | `/edit` (admin only) | Rewrite any message from Telegram, premium emoji and all |
 | `/whoami` | Your username and id — what to put in `ADMINS` |
 | `/login` (admin only) | Signs the userbot in from Telegram — no terminal |
@@ -35,6 +36,10 @@ so a text edited once changes everywhere at once.
 
 The **JOIN FREE VIP** button opens `t.me/<admin>` with the join request
 pre-typed, so the new member only has to press send.
+
+**One message, not one per member.** The bot posts once and pins it; nobody is
+greeted individually. Rewriting the text with `/edit` edits that same pinned
+message in place, so the pin is never stale and never becomes a second post.
 
 ---
 
@@ -57,9 +62,9 @@ credentials. Everything else lives at the top of
 [`src/messages.js`](src/messages.js), next to the texts it belongs with:
 
 ```js
-const ADMIN_USERNAME = "potlood17";   // who the buttons DM
-const CHANNEL_ID = "";                // where /post publishes
-const WELCOME_IN_GROUP = true;        // welcome new members in the group
+const ADMIN_USERNAME = "potlood17";      // who the buttons DM
+const ADMINS = ["tmaxfxx", "rased485"];  // who may run /edit and /post
+const CHANNEL_ID = "";                   // where /post publishes
 ```
 
 That way changing the admin or the channel is a push, not an SSH session. An
@@ -69,17 +74,17 @@ override one.
 ### 3. Add the bot to the channel / group
 
 Add it as an **administrator**. That is the whole setup — the bot posts the VIP
-message there straight away and welcomes everyone who joins from then on, in
-any chat, with nothing to configure per chat.
+message there straight away, pins it, and from then on that one pinned message
+is the only thing it ever puts in the chat.
 
 It needs:
 
-- **Post Messages** — to send the welcome and to run `/post`
+- **Post Messages** — to send the message and to run `/post`
+- **Pin Messages** — to pin it, and to unpin the old one when it is replaced
 - **Add Members / Invite Users** — to approve join requests
 
-Administrator rights are also what makes Telegram deliver `chat_member` join
-updates at all. In a channel that is the only signal a join happened, so
-without them channel joins are invisible to the bot.
+If the bot is **already** in the chat, send **`/post`** inside the group
+instead: it posts the message, pins it, and starts keeping it up to date.
 
 ### 4. Run it
 
@@ -159,9 +164,13 @@ Telegram will not render it, you find out there rather than in front of a client
 | `/cancel` | Leave the message as it was |
 | `/reset` | Put the original text back (while editing one) |
 
-What can be edited: the welcome/VIP post, its button label, the pre-typed DM,
+What can be edited: the pinned VIP post, its button label, the pre-typed DM,
 the `/link` message with its button label and URL, and the `/ib` message with
 its button label.
+
+Editing the pinned post — or its button label, or the pre-typed DM — **updates
+the message already pinned in every chat**, in place. The bot says how many it
+changed.
 
 ### First-time setup
 
@@ -193,9 +202,9 @@ an inconvenience, going silent is an outage.
 
 A **bot** may only send custom emoji if it owns a username bought on
 [Fragment](https://fragment.com). @Scarfxxbot does not, so anything *it* sends —
-the welcome, `/link` and `/ib` in a group, `/post` — arrives with the plain
-fallback emoji. The bot notices Telegram's refusal and re-sends automatically, so
-the message always lands.
+the pinned post, and `/start` `/link` `/ib` in a private chat — arrives with the
+plain fallback emoji. The bot notices Telegram's refusal and re-sends
+automatically, so the message always lands.
 
 The **userbot** is the account itself, and the account has Premium, so `/link`,
 `/ib` and `/vip` typed in a DM go out with the real premium emoji.
@@ -221,8 +230,8 @@ its place, from their own account. The prospect sees an ordinary message.
 | `/ib` | The IB-change instructions |
 | `/vip` | The welcome/VIP text |
 
-Only in one-to-one chats — in a group the bot already answers `/link`, and both
-firing would send it twice. Flip `USERBOT_PRIVATE_ONLY=false` to change that.
+Only in one-to-one chats — a group is not where you pitch someone, and the bot
+deliberately says nothing there. Flip `USERBOT_PRIVATE_ONLY=false` to change that.
 
 **Two differences from the bot's version of the same message:**
 
@@ -320,35 +329,45 @@ that first — this userbot exists for the cases where it does not fit.
 
 ---
 
-## Never missed, never doubled
+## One message, never doubled
 
-One person joining reaches the bot as up to three separate updates — the
-service message, the `chat_member` update, and a join request. Exactly one of
-them should produce a welcome, and none of them should be lost.
+The rule the client set: one message in the group, pinned, and no greeting per
+member. That makes *post exactly once, then edit in place* the thing to get
+right.
 
-**Not missed:**
+**Posted once:**
 
-- All three signals are handled, so a join is caught however it arrives.
+- The bot posts when it is added or promoted, then remembers the chat and the
+  message id in `data/pinned.json`.
+- If that chat is already in the list it does nothing. A demote-then-promote, or
+  Telegram redelivering the update after a deploy, cannot produce a second post.
+- The list is on disk, not only in memory, because every deploy reloads the
+  process. It is written by rename, so a crash mid-write cannot leave a
+  truncated file that reads as empty and posts everywhere again.
+
+**Kept current:**
+
+- `/edit` edits the pinned message in place — same chat, same message id — so
+  the pin is never stale and never turns into a second post.
+- Editing the button label or the pre-typed DM rebuilds the button on that same
+  message too.
+- A post that has been deleted is dropped from the list rather than retried
+  forever, and "message is not modified" is treated as success, not an error.
+- Running `/post` again in a chat unpins the previous one first, so the chat
+  keeps exactly **one** pinned message.
+
+**Not lost:**
+
 - The polling loop keeps its backlog across a restart (`dropPendingUpdates:
-  false`). A deploy reloads PM2 for about two seconds; anyone who joins in that
-  window is still welcomed afterwards.
-- A `429` rate limit — likely when a burst of people join at once — is waited
-  out and retried. Telegram states how long to wait and that it did not send,
-  so retrying cannot duplicate anything. Same for `5xx`.
-- If every send for one member fails, the bot forgets it tried, so the next
-  signal for that person retries instead of writing them off.
-
-**Not doubled:**
-
-- Whichever signal arrives first claims the member; the others see the claim
-  and stay quiet.
-- That list lives in `data/welcomed.json`, not just in memory, so it survives
-  the restart on every deploy. Without it, a re-delivered update would greet
-  someone a second time. Entries are kept for 7 days and pruned.
-- The file is written by rename, so a crash mid-write cannot leave a truncated
-  file that reads as empty and re-welcomes everyone.
+  false`), so an `/edit` or a `/post` sent during the two seconds of a deploy is
+  still applied.
+- A `429` rate limit is waited out and retried. Telegram states how long to wait
+  and that it did *not* send, so retrying cannot duplicate anything. Same for
+  `5xx`.
 - A network error is deliberately *not* retried: the message may have arrived
   before the connection dropped, and a blind retry would post it twice.
+- A failed **pin** never fails the post. The message is still tracked, so `/edit`
+  keeps it current and it can be pinned by hand.
 
 `data/` is gitignored, so a deploy never overwrites it.
 
@@ -371,7 +390,7 @@ nothing inbound, nothing for nginx to route.
 PM2 runs one app, **`vip-bot`**, one fork instance — the Telegraf bot and the
 GramJS userbot both live inside it. One instance is deliberate: Telegram hands
 each update to exactly one `getUpdates` caller, so a second copy would silently
-take half the joins.
+swallow half the commands.
 
 ```bash
 pm2 logs vip-bot            # follow
@@ -413,9 +432,13 @@ cannot collide with anything else deploying on the same box.
 
 ## Editing the messages
 
-Everything the bot says — and every non-secret setting — lives in
-[`src/messages.js`](src/messages.js). Open it, change the text between the
-backticks, push. No database, no dashboard, no `.env` edit.
+Day to day, use **`/edit` from Telegram** — see [Changing the messages from
+Telegram](#changing-the-messages-from-telegram). That is the path the client
+uses, and it updates the pinned message straight away.
+
+[`src/messages.js`](src/messages.js) holds the same texts as the **seed**: what
+a fresh database starts from, and what `/reset` goes back to. Every non-secret
+setting lives there too. Open it, change the text between the backticks, push.
 
 **Formatting** is Telegram HTML:
 
@@ -432,6 +455,10 @@ backticks, push. No database, no dashboard, no `.env` edit.
 | `{username}` | `@theirname`, or their first name if they have none |
 | `{chat}` | The group or channel title |
 | `{admin}` | The value of `ADMIN_USERNAME` |
+
+`{name}` and `{username}` only mean something in a message sent to one person —
+`/start`, and the userbot's shortcuts. The pinned post is addressed to the whole
+chat and has no particular member, so leave those two out of it.
 
 ### Premium (custom) emoji
 
@@ -451,7 +478,13 @@ keep the plain emoji.
 
 ---
 
-## Publishing the VIP post to the channel
+## Publishing the pinned post
+
+The simplest way needs no configuration at all: send **`/post` inside the group
+or channel**. The bot posts the message there, pins it, and starts keeping it up
+to date with `/edit`.
+
+To post from a private chat instead:
 
 1. Make sure the bot is an admin in the channel.
 2. Set `CHANNEL_ID`:
@@ -462,8 +495,8 @@ keep the plain emoji.
 
 One-off target without changing the config: `/post @otherchannel`.
 
-Only the account in `ADMIN_USERNAME` can run it; for everyone else the command
-does nothing.
+Only the accounts in `ADMINS` can run it. Posting again into a chat that already
+has one unpins the old message first, so there is never more than one pinned.
 
 ---
 
@@ -485,11 +518,9 @@ does nothing.
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `ADMIN_USERNAME` | `potlood17` | Who the buttons open a chat with |
-| `ADMINS` | `["potlood17"]` | Who may run the admin commands (usernames or ids) |
-| `CHANNEL_ID` | `""` | Target for `/post` |
+| `ADMINS` | `["tmaxfxx", "rased485"]` | Who may run the admin commands (usernames or ids) |
+| `CHANNEL_ID` | `""` | Target for `/post` from a private chat |
 | `AUTO_APPROVE_JOIN_REQUESTS` | `true` | Approve join requests automatically |
-| `WELCOME_IN_GROUP` | `true` | Post the welcome in the group itself |
-| `WELCOME_IN_DM` | `true` | Also send the welcome privately |
 | `USERBOT_PRIVATE_ONLY` | `true` | Expand shortcuts in one-to-one chats only |
 
 **Where the process runs** — set by `deploy/ecosystem.config.cjs` on the VPS, or
@@ -510,15 +541,22 @@ variable of the same name.
 
 ## Troubleshooting
 
-**Nobody gets welcomed in a group or channel.** The bot is not an
-administrator there. Telegram only sends `chat_member` join updates to admins,
-and in a channel that update is the only signal a join happened. Promote the
-bot and try again.
+**The bot posted nothing when I added it.** It has to be an **administrator**
+with Post Messages. If it was already in the chat before this version, no
+`my_chat_member` update ever arrives — send `/post` inside the group instead and
+it posts, pins, and takes over from there.
 
-**Channel joiners get nothing.** A bot cannot message someone who has never
-opened a chat with it. The fix is to switch the channel's invite link to
-**"Request to join"** — approving the request is what opens the DM. Everyone
-joining through a plain link will only see the pinned VIP post.
+**It posted but did not pin.** Missing the **Pin Messages** right; the log says
+so in as many words. Grant it and send `/post` again, or pin that one message by
+hand.
+
+**`/edit` saved, but the pinned message did not change.** The bot only edits
+posts it made itself and recorded in `data/pinned.json`. A message pinned by
+hand, or posted by an older version of the bot, is not in that list — send
+`/post` once to replace it with a tracked one.
+
+**New members get no message.** That is the intended behaviour now: nobody is
+greeted individually, they read the pinned post.
 
 **/link and /ib stopped expanding in DMs.** The userbot session was signed out
 — Telegram's Devices list, or a password change. Send `/login` to the bot to
@@ -543,11 +581,14 @@ there. Forward a post from the channel to the bot to confirm the id.
 
 ```
 index.js                  starts both halves, plus the health endpoint
-src/bot.js                every command and join handler (Telegraf)
+src/bot.js                every command and membership handler (Telegraf)
+src/pinned.js             the pinned post: posted once, edited in place after that
 src/userbot.js            the /link and /ib expander (GramJS)
 src/store.js              the messages, in MongoDB, cached in memory
 src/editor.js             the /edit conversation
 src/entities.js           Telegram message -> HTML, premium emoji intact
+src/send.js               sending and editing HTML, with the retries that matter
+src/keyboards.js          the inline buttons, built from the current texts
 src/userbot-auth.js       the /login conversation
 src/env-file.js           the careful .env rewriter both logins share
 src/messages.js           settings + the seed texts

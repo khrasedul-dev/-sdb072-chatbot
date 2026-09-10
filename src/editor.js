@@ -10,10 +10,39 @@
 const { Markup } = require("telegraf");
 
 const store = require("./store");
+const pinned = require("./pinned");
 const { messageToHtml, escapeHtml } = require("./entities");
 
 /** One edit at a time per admin: userId -> { key } */
 const editing = new Map();
+
+/**
+ * The keys the pinned post is built from: its text, its button label, and the
+ * DM that button pre-types. Changing any of them has to change the message
+ * already pinned in the group — that is the point of pinning one message
+ * instead of greeting every arrival.
+ */
+const PINNED_KEYS = ["WELCOME_MESSAGE", "WELCOME_BUTTON_TEXT", "WELCOME_PREFILLED_DM"];
+
+/**
+ * Push a just-saved change out to every pinned post. Never throws: the edit is
+ * already saved, and a chat the bot has been removed from must not turn a
+ * successful edit into an error.
+ */
+async function syncPinned(ctx, key) {
+  if (!PINNED_KEYS.includes(key) || pinned.count() === 0) return;
+
+  try {
+    const updated = await pinned.refreshAll(ctx.telegram);
+    if (updated === 1) {
+      await ctx.reply("The pinned message has been updated too.");
+    } else if (updated > 1) {
+      await ctx.reply(`The pinned message has been updated in ${updated} chats too.`);
+    }
+  } catch (err) {
+    await ctx.reply(`Saved, but the pinned message could not be updated: ${err.message}`);
+  }
+}
 
 const isEditing = (userId) => editing.has(userId);
 
@@ -143,6 +172,8 @@ async function applyEdit(ctx) {
     );
   }
 
+  await syncPinned(ctx, key);
+
   return true;
 }
 
@@ -155,6 +186,8 @@ async function resetCurrent(ctx) {
   try {
     await store.reset(pending.key);
     await ctx.reply(`${store.EDITABLE[pending.key].label} is back to the original text.`);
+    // A reset changes the text just as much as an edit does.
+    await syncPinned(ctx, pending.key);
   } catch (err) {
     await ctx.reply(`Could not reset it: ${err.message}`);
   }

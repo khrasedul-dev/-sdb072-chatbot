@@ -3,7 +3,7 @@ const express = require("express");
 const store = require("./src/store");
 const { createBot, ALLOWED_UPDATES } = require("./src/bot");
 const { startUserbot, stopUserbot } = require("./src/userbot");
-const { PRIVATE_COMMANDS, GROUP_COMMANDS } = require("./src/messages");
+const { PRIVATE_COMMANDS } = require("./src/messages");
 const {
   BOT_TOKEN,
   PORT,
@@ -88,9 +88,10 @@ async function main() {
       .launch({
         allowedUpdates: ALLOWED_UPDATES,
         // Keep whatever queued up while the process was restarting. Every
-        // deploy reloads PM2, and dropping the backlog would mean anyone who
-        // joined in those two seconds never gets welcomed. Re-delivered
-        // updates are safe: the welcomed list on disk survives the restart.
+        // deploy reloads PM2, and dropping the backlog would lose an edit or a
+        // /post sent in those two seconds. Re-delivered updates are safe: the
+        // list of pinned posts on disk survives the restart, so nothing is
+        // posted or pinned twice.
         dropPendingUpdates: false,
       })
       .catch((err) => {
@@ -99,13 +100,14 @@ async function main() {
       });
   }
 
-  // The "/" menu is scoped: /start belongs in a private chat, while /link and
-  // /ib should be listed inside groups too. Nice-to-have — harmless if
-  // Telegram rate-limits it.
+  // The "/" menu exists in private chats only. Groups get it explicitly cleared
+  // — the bot answers no commands there, and a menu listing commands that stay
+  // silent is worse than no menu. deleteMyCommands also removes the group list
+  // an earlier version of this bot published.
   bot.telegram
     .setMyCommands(PRIVATE_COMMANDS, { scope: { type: "all_private_chats" } })
-    .then(() => bot.telegram.setMyCommands(GROUP_COMMANDS, { scope: { type: "all_group_chats" } }))
-    .then(() => console.log(`Commands: ${GROUP_COMMANDS.map((c) => "/" + c.command).join(" ")} in groups`))
+    .then(() => bot.telegram.deleteMyCommands({ scope: { type: "all_group_chats" } }))
+    .then(() => console.log("Commands: private chats only — none in groups"))
     .catch((err) => console.warn("[boot] Could not publish the command menu:", err.message));
 
   // Telegraf and GramJS in the same process. The userbot resolves to null
