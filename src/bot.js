@@ -6,7 +6,7 @@ const editor = require("./editor");
 const pinned = require("./pinned");
 const { sendHtml } = require("./send");
 const { welcomeKeyboard, linkKeyboard, ibKeyboard } = require("./keyboards");
-const { stripCustomEmoji, toPlainText, render } = require("./format");
+const { stripCustomEmoji, toPlainText, render, escapeHtml } = require("./format");
 const {
   startLogin,
   provideAnswer,
@@ -27,6 +27,22 @@ const ALLOWED_UPDATES = [
   "my_chat_member",
   "chat_join_request",
 ];
+
+/**
+ * Why Telegram refused a pin, and what to do about it.
+ *
+ * Worth spelling out rather than logging quietly: from the outside a missing
+ * right looks like a broken bot. The message posts perfectly well and simply is
+ * not pinned, which sends you looking for a bug that is not there.
+ */
+function pinAdvice(reason) {
+  return (
+    `Telegram said: ${reason}\n\n` +
+    'Make me an administrator in that chat and switch on "Pin Messages", then send /post ' +
+    "again. The message is posted and tracked either way, so /edit still keeps it up to " +
+    "date — it just is not pinned yet."
+  );
+}
 
 function createBot(token) {
   const bot = new Telegraf(token, {
@@ -151,8 +167,9 @@ function createBot(token) {
 
     const replacing = pinned.has(chat.id);
 
+    let result;
     try {
-      await pinned.postAndPin(ctx.telegram, chat);
+      result = await pinned.postAndPin(ctx.telegram, chat);
     } catch (err) {
       return ctx.reply(
         `Could not post to ${target}: ${err.message}\n\n` +
@@ -161,11 +178,13 @@ function createBot(token) {
       );
     }
 
-    const confirmation =
-      `Posted in ${chat.title || target} and pinned it.` +
-      (replacing
-        ? "\n\nThat new message is the one /edit will keep up to date, and the previous one has been unpinned."
-        : "\n\nSend /edit whenever you want to rewrite it; the pinned message updates itself.");
+    const where = chat.title || target;
+    const confirmation = result.pinned
+      ? `Posted in ${where} and pinned it.` +
+        (replacing
+          ? "\n\nThat new message is the one /edit will keep up to date, and the previous one has been unpinned."
+          : "\n\nSend /edit whenever you want to rewrite it; the pinned message updates itself.")
+      : `Posted in ${where} — but I could NOT pin it.\n\n${pinAdvice(result.pinError)}`;
 
     // Run inside a group, /post should leave that group holding nothing but the
     // pinned post — so the command is cleared and the answer goes privately.
@@ -329,8 +348,9 @@ function createBot(token) {
       return;
     }
 
+    let result;
     try {
-      await pinned.postAndPin(ctx.telegram, chat);
+      result = await pinned.postAndPin(ctx.telegram, chat);
     } catch (err) {
       console.error(
         `[bot] Could not post in "${chat.title || chat.id}": ${err.message}. ` +
@@ -344,8 +364,11 @@ function createBot(token) {
     try {
       await ctx.telegram.sendMessage(
         from.id,
-        `Posted and pinned the message in "${chat.title || chat.id}".\n\n` +
-          `Chat id: <code>${chat.id}</code>\n\n` +
+        (result.pinned
+          ? `Posted and pinned the message in "${escapeHtml(chat.title || chat.id)}".`
+          : `Posted the message in "${escapeHtml(chat.title || chat.id)}" — but I could NOT pin it.\n\n` +
+            escapeHtml(pinAdvice(result.pinError))) +
+          `\n\nChat id: <code>${chat.id}</code>\n\n` +
           "Send /edit any time to rewrite it — the pinned message updates itself.",
         { parse_mode: "HTML" }
       );

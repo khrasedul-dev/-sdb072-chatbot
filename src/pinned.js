@@ -80,6 +80,10 @@ const welcomeText = (chat) => render(store.get("WELCOME_MESSAGE"), { chat });
  * A failed pin is not a failed post: the message is still tracked, so /edit
  * keeps it current, and the admin can pin it by hand. Only the send failing is
  * an error worth propagating.
+ *
+ * Returns `{ message, pinned, pinError }`. The caller has to know whether the
+ * pin actually happened — reporting "posted and pinned" when Telegram refused
+ * the pin sends the admin hunting for a bug that is really a missing right.
  */
 async function postAndPin(telegram, chat, { pin = true } = {}) {
   const previous = get(chat.id);
@@ -98,21 +102,22 @@ async function postAndPin(telegram, chat, { pin = true } = {}) {
     }
   }
 
-  if (pin) {
-    try {
-      // Silent: the post is for people arriving later, not a notification for
-      // everyone already in the chat.
-      await telegram.pinChatMessage(chat.id, message.message_id, { disable_notification: true });
-      console.log(`[pinned] Posted and pinned in "${chat.title || chat.id}".`);
-    } catch (err) {
-      console.warn(
-        `[pinned] Posted in "${chat.title || chat.id}" but could not pin it: ${err.message}. ` +
-          'The bot needs the "Pin Messages" right.'
-      );
-    }
-  }
+  if (!pin) return { message, pinned: false, pinError: null };
 
-  return message;
+  try {
+    // Silent: the post is for people arriving later, not a notification for
+    // everyone already in the chat.
+    await telegram.pinChatMessage(chat.id, message.message_id, { disable_notification: true });
+    console.log(`[pinned] Posted and pinned in "${chat.title || chat.id}".`);
+    return { message, pinned: true, pinError: null };
+  } catch (err) {
+    const reason = err?.response?.description || err.message;
+    console.warn(
+      `[pinned] Posted in "${chat.title || chat.id}" but could not pin it: ${reason}. ` +
+        'The bot needs to be an administrator there with the "Pin Messages" right.'
+    );
+    return { message, pinned: false, pinError: reason };
+  }
 }
 
 /**

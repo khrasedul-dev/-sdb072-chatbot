@@ -553,9 +553,20 @@ and it posts and pins immediately. If it was already in the chat before this
 version, no `my_chat_member` update ever arrives at all — send `/post` inside
 the group instead and it posts, pins, and takes over from there.
 
-**It posted but did not pin.** It is an admin but without the **Pin Messages**
-right; the log says so in as many words. Grant it and send `/post` again, or pin
-that one message by hand — it is tracked either way, so `/edit` keeps it current.
+**It posted but did not pin.** It is not an administrator there, or it is one
+without the **Pin Messages** right. `/post` tells you so directly — it says
+"could NOT pin it" and quotes Telegram's own reason — and the log has the same
+line. Grant the right and send `/post` again, or pin that one message by hand:
+it is tracked either way, so `/edit` keeps it current.
+
+Check what Telegram thinks the bot is, if it is not obvious:
+
+```bash
+curl "https://api.telegram.org/bot<TOKEN>/getChatMember?chat_id=<CHAT>&user_id=<BOT_ID>"
+```
+
+`"status":"member"` is the usual answer — the bot was added but never promoted,
+and a member cannot pin anything.
 
 **`/edit` saved, but the pinned message did not change.** The bot only edits
 posts it made itself and recorded in `data/pinned.json`. A message pinned by
