@@ -83,8 +83,14 @@ It needs:
 - **Pin Messages** — to pin it, and to unpin the old one when it is replaced
 - **Add Members / Invite Users** — to approve join requests
 
-If the bot is **already** in the chat, send **`/post`** inside the group
-instead: it posts the message, pins it, and starts keeping it up to date.
+**Administrator or nothing.** Added as a plain member the bot posts nothing and
+says so in the log — without Pin Messages it could not pin, and an unpinned post
+is just a loose message sitting in the chat. Promote it and it posts and pins
+right then.
+
+If the bot is **already** in the chat, no membership update ever arrives — send
+**`/post`** inside the group instead: it posts the message, pins it, and starts
+keeping it up to date.
 
 ### 4. Run it
 
@@ -541,14 +547,15 @@ variable of the same name.
 
 ## Troubleshooting
 
-**The bot posted nothing when I added it.** It has to be an **administrator**
-with Post Messages. If it was already in the chat before this version, no
-`my_chat_member` update ever arrives — send `/post` inside the group instead and
-it posts, pins, and takes over from there.
+**The bot posted nothing when I added it.** It only posts where it is an
+**administrator** — as a plain member it waits, and the log says so. Promote it
+and it posts and pins immediately. If it was already in the chat before this
+version, no `my_chat_member` update ever arrives at all — send `/post` inside
+the group instead and it posts, pins, and takes over from there.
 
-**It posted but did not pin.** Missing the **Pin Messages** right; the log says
-so in as many words. Grant it and send `/post` again, or pin that one message by
-hand.
+**It posted but did not pin.** It is an admin but without the **Pin Messages**
+right; the log says so in as many words. Grant it and send `/post` again, or pin
+that one message by hand — it is tracked either way, so `/edit` keeps it current.
 
 **`/edit` saved, but the pinned message did not change.** The bot only edits
 posts it made itself and recorded in `data/pinned.json`. A message pinned by

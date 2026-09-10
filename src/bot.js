@@ -306,9 +306,17 @@ function createBot(token) {
     const justPromoted = wasActive && after.status === "administrator" && before.status !== "administrator";
     if (!justArrived && !justPromoted) return;
 
-    // A channel only accepts posts from an administrator, so wait for the
-    // promotion rather than failing on the way in.
-    if (chat.type === "channel" && after.status !== "administrator") return;
+    // Administrator or nothing. Without it the bot cannot pin, and an unpinned
+    // post is exactly the loose message in the group the client did not want —
+    // a channel will not even accept the post. Added as a plain member it stays
+    // quiet and waits; promoting it is what triggers the post.
+    if (after.status !== "administrator") {
+      console.log(
+        `[bot] Added to "${chat.title || chat.id}" as ${after.status} — waiting to be made an ` +
+          "administrator before posting, so the message can be pinned."
+      );
+      return;
+    }
 
     console.log(
       `[bot] Added to ${chat.type} "${chat.title || chat.id}" as ${after.status}. Chat id: ${chat.id}`
