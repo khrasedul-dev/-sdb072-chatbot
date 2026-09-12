@@ -58,9 +58,15 @@ function createBot(token) {
   });
 
   /* ------------------------------- commands ------------------------------ */
-  // Private chats only. In a group the bot says nothing at all: the client asked
-  // for the pinned post to be the group's single message, so a member typing
-  // /link there gets no reply and the "/" menu lists nothing.
+  // /link and /ib stay private. The client asked for the pinned post to be the
+  // group's only message, so a member typing them there gets no reply and the
+  // "/" menu lists nothing in groups.
+  //
+  // /welcome is the deliberate exception: it is asked for rather than automatic,
+  // and what the client objected to was the automatic part — a greeting fired at
+  // every join. Typed in a group or channel it shows the message on demand and
+  // then clears the command, so what stays behind is the message and nothing
+  // else. It is not listed in any group menu, for the same reason.
 
   bot.start(async (ctx) => {
     if (ctx.chat.type !== "private") return;
@@ -90,6 +96,56 @@ function createBot(token) {
       render(store.get("IB_MESSAGE"), { user: ctx.from, chat: ctx.chat }),
       ibKeyboard()
     );
+  });
+
+  /**
+   * Show the welcome post on demand.
+   *
+   * Nothing to do with the pinned one: this copy is not pinned and not tracked,
+   * so /edit leaves it alone. Outside a private chat the command itself is
+   * removed afterwards, which is what keeps the group from filling up with
+   * "/welcome" lines nobody wants to read.
+   */
+  async function showWelcome(telegram, { chat, from, commandMessageId }) {
+    await sendHtml(
+      telegram,
+      chat.id,
+      render(store.get("WELCOME_MESSAGE"), { user: from, chat }),
+      welcomeKeyboard()
+    );
+
+    if (chat.type === "private" || !commandMessageId) return;
+    try {
+      await telegram.deleteMessage(chat.id, commandMessageId);
+    } catch {
+      // No "Delete Messages" right. The command stays; not worth failing over.
+    }
+  }
+
+  bot.command("welcome", async (ctx) => {
+    await showWelcome(ctx.telegram, {
+      chat: ctx.chat,
+      from: ctx.from,
+      commandMessageId: ctx.message.message_id,
+    });
+  });
+
+  // A channel delivers posts as `channel_post`, and Telegraf's command() filters
+  // on `message` — so without this, /welcome typed in a channel is never seen.
+  // Only administrators can post in a channel, so anyone who can type it there
+  // is already trusted.
+  bot.on("channel_post", async (ctx, next) => {
+    const post = ctx.channelPost;
+    const match = /^\/welcome(?:@(\w+))?$/i.exec((post?.text || "").trim());
+    if (!match) return next();
+    // Respect /welcome@someotherbot in a channel two bots share.
+    if (match[1] && match[1].toLowerCase() !== String(ctx.me || "").toLowerCase()) return next();
+
+    await showWelcome(ctx.telegram, {
+      chat: ctx.chat,
+      from: post.from,
+      commandMessageId: post.message_id,
+    });
   });
 
   /* -------------------------------- admin -------------------------------- */

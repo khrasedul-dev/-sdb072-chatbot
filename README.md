@@ -23,7 +23,8 @@ so a text edited once changes everywhere at once.
 | `/start` in a private chat | Sends the VIP message + **JOIN FREE VIP** button |
 | `/link` in a private chat | Sends the PU Prime signup text + link button + DM button |
 | `/ib` in a private chat | Sends the IB-change instructions + contact button |
-| Any command **in a group** | Nothing — the bot does not answer commands there |
+| `/welcome` anywhere | Shows the VIP message on demand — group, channel or DM |
+| Any **other** command in a group | Nothing — `/link`, `/ib` and the rest go unanswered there |
 | Someone **joins** | Nothing is sent. They read the pinned post |
 | Someone **requests to join** | Request approved, silently |
 | Bot added as **administrator** | Posts the VIP message there once, **pins it**, and DMs the chat id to whoever added it |
